@@ -1,0 +1,25 @@
+# EagleSignal AI — curated market-moving event calendar (research only).
+#
+# This file holds high-confidence, officially-published dates that cannot be
+# derived by a simple rule (mainly FOMC decision days). Recurring releases that
+# ARE rule-derivable (NFP = first Friday, weekly jobless claims = Thursdays) are
+# generated in code and need not be listed here. Earnings dates come live from
+# the keyless earnings connector. NEVER guess a date — only list dates confirmed
+# from the official source. Update annually from the Federal Reserve schedule
+# (federalreserve.gov/monetarypolicy/fomccalendars.htm).
+#
+# impact: high | medium | low   (drives event-risk gating in the engine)
+
+events:
+  # ---- 2026 FOMC decision days (rate decision = 2nd meeting day, ET) --------
+  - {date: '2026-01-28', kind: fomc, impact: high, title: 'FOMC rate decision + statement'}
+  - {date: '2026-03-18', kind: fomc, impact: high, title: 'FOMC rate decision + SEP/dot plot'}
+  - {date: '2026-04-29', kind: fomc, impact: high, title: 'FOMC rate decision + statement'}
+  - {date: '2026-06-17', kind: fomc, impact: high, title: 'FOMC rate decision + SEP/dot plot'}
+  - {date: '2026-07-29', kind: fomc, impact: high, title: 'FOMC rate decision + statement'}
+  - {date: '2026-09-16', kind: fomc, impact: high, title: 'FOMC rate decision + SEP/dot plot'}
+  - {date: '2026-10-28', kind: fomc, impact: high, title: 'FOMC rate decision + statement'}
+  - {date: '2026-12-09', kind: fomc, impact: high, title: 'FOMC rate decision + SEP/dot plot'}
+  # 2027 dates are tentative until the Fed publishes them — add when confirmed.
+
+source: 'Federal Reserve published FOMC calendar (federalreserve.gov)'

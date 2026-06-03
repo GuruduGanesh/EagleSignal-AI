@@ -1,0 +1,42 @@
+# EagleSignal AI — Docker Desktop deployment
+# Usage:
+#   docker compose up --build api          # FastAPI + dashboard at http://localhost:8000
+#   docker compose run --rm cli run --strategy swing --tickers NVDA,AAPL
+#   docker compose run --rm cli backtest --ticker AAPL
+
+services:
+  api:
+    build: .
+    image: eaglesignal:latest
+    container_name: eaglesignal-api
+    env_file:
+      - .env
+    environment:
+      # The host runs Ollama on localhost:11434, but inside the container
+      # "localhost" is the container itself. Reach the host's Ollama (GPU) via
+      # the Docker host gateway so /advisor and the LLM sentiment path work
+      # from the container too. Host-run scans keep using localhost (blank .env).
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./reports:/app/reports
+      - ./data:/app/data
+      - ./config:/app/config
+    restart: unless-stopped
+
+  # On-demand batch runner (shares the same image).
+  cli:
+    build: .
+    image: eaglesignal:latest
+    container_name: eaglesignal-cli
+    env_file:
+      - .env
+    volumes:
+      - ./reports:/app/reports
+      - ./data:/app/data
+      - ./config:/app/config
+    entrypoint: ["python", "-m", "eaglesignal"]
+    profiles: ["tools"]   # not started by `up`; invoke via `docker compose run cli ...`

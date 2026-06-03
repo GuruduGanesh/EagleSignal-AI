@@ -1,0 +1,184 @@
+# Policy and technology theme watchlists.
+#
+# These are research candidates and context baskets, not automatic prediction
+# targets. Add symbols to config/watchlist.yml when you want EagleSignal to
+# score them in the daily run.
+
+trump_and_administration_policy:
+  description: >
+    Publicly traded names or liquid proxies that can react to Trump
+    administration policy, White House/Federal Register actions, tariffs,
+    defense/space procurement, energy/nuclear/data-center policy, domestic
+    manufacturing, and immigration/border/security priorities.
+  direct_trump_business:
+    - ticker: DJT
+      company: Trump Media & Technology Group
+      rationale: Direct public Trump-affiliated media/technology company.
+      risk_note: Extremely event-driven and headline-sensitive.
+  policy_adjacency:
+    - ticker: PLTR
+      company: Palantir Technologies
+      theme: defense_ai_government_software
+    - ticker: BAH
+      company: Booz Allen Hamilton
+      theme: federal_it_defense_consulting
+    - ticker: LMT
+      company: Lockheed Martin
+      theme: defense_procurement
+    - ticker: RTX
+      company: RTX
+      theme: defense_aerospace
+    - ticker: NOC
+      company: Northrop Grumman
+      theme: defense_space
+    - ticker: GD
+      company: General Dynamics
+      theme: defense_shipbuilding
+    - ticker: GE
+      company: GE Aerospace
+      theme: defense_aerospace_engines
+    - ticker: OKLO
+      company: Oklo
+      theme: nuclear_ai_power
+    - ticker: SMR
+      company: NuScale Power
+      theme: nuclear_ai_power
+    - ticker: CEG
+      company: Constellation Energy
+      theme: nuclear_power_data_centers
+    - ticker: VST
+      company: Vistra
+      theme: power_data_centers
+    - ticker: TSLA
+      company: Tesla
+      theme: ev_energy_robotics_space_adjacency
+    - ticker: RKLB
+      company: Rocket Lab
+      theme: space_launch_defense
+    - ticker: LUNR
+      company: Intuitive Machines
+      theme: space_lunar_government_contracts
+    - ticker: ASTS
+      company: AST SpaceMobile
+      theme: space_communications
+    - ticker: INTC
+      company: Intel
+      theme: domestic_chips
+    - ticker: AAPL
+      company: Apple
+      theme: ai_devices_supply_chain_policy
+    - ticker: MU
+      company: Micron Technology
+      theme: domestic_memory_chips
+    - ticker: NVDA
+      company: NVIDIA
+      theme: ai_gpu_export_controls
+    - ticker: AMD
+      company: Advanced Micro Devices
+      theme: ai_gpu_export_controls
+    - ticker: AVGO
+      company: Broadcom
+      theme: ai_networking_chips
+    - ticker: MRVL
+      company: Marvell Technology
+      theme: ai_networking_custom_silicon
+    - ticker: QBTS
+      company: D-Wave Quantum
+      theme: quantum_ai_compute_high_beta
+    - ticker: ORCL
+      company: Oracle
+      theme: ai_cloud_government
+    - ticker: MSFT
+      company: Microsoft
+      theme: ai_cloud_government
+    - ticker: AMZN
+      company: Amazon
+      theme: cloud_data_centers_government
+    - ticker: GOOGL
+      company: Alphabet
+      theme: ai_cloud_policy
+    - ticker: META
+      company: Meta Platforms
+      theme: ai_data_center_policy
+    - ticker: DELL
+      company: Dell Technologies
+      theme: ai_servers
+    - ticker: HPE
+      company: Hewlett Packard Enterprise
+      theme: ai_servers_networking
+  private_context_only:
+    - company: Groq
+      theme: ai_inference_accelerators
+      rationale: Private AI inference chip/cloud company; use for competitive and customer-demand context only, not as a tradable ticker.
+
+top_15_ai_gpu_compute_storage_semis_robotics_space:
+  description: >
+    Priority public watchlist for AI, GPU compute, storage, semiconductors,
+    chips, robotics, and space. This is a concentrated research list, not a
+    recommendation to buy.
+  names:
+    - ticker: NVDA
+      company: NVIDIA
+      themes: [ai, gpu_compute, chips]
+    - ticker: AMD
+      company: Advanced Micro Devices
+      themes: [ai, gpu_compute, chips]
+    - ticker: AVGO
+      company: Broadcom
+      themes: [ai_networking, chips]
+    - ticker: TSM
+      company: Taiwan Semiconductor Manufacturing
+      themes: [semiconductor_foundry]
+    - ticker: ASML
+      company: ASML Holding
+      themes: [chip_equipment, lithography]
+    - ticker: AMAT
+      company: Applied Materials
+      themes: [chip_equipment]
+    - ticker: LRCX
+      company: Lam Research
+      themes: [chip_equipment]
+    - ticker: MU
+      company: Micron Technology
+      themes: [memory, ai_storage]
+    - ticker: SMCI
+      company: Super Micro Computer
+      themes: [ai_servers, gpu_compute]
+    - ticker: DELL
+      company: Dell Technologies
+      themes: [ai_servers, storage]
+    - ticker: HPE
+      company: Hewlett Packard Enterprise
+      themes: [ai_servers, networking]
+    - ticker: WDC
+      company: Western Digital
+      themes: [storage]
+    - ticker: TSLA
+      company: Tesla
+      themes: [robotics, autonomous_compute]
+    - ticker: ISRG
+      company: Intuitive Surgical
+      themes: [robotics, medical_automation]
+    - ticker: RKLB
+      company: Rocket Lab
+      themes: [space, defense_space]
+
+additional_focused_ai_context:
+  description: >
+    Public names recently requested for active scoring plus private context that
+    should inform evidence, themes, and competitive analysis without expanding
+    predictions beyond tradable U.S. symbols.
+  public_active_targets:
+    - ticker: AAPL
+      company: Apple
+      themes: [ai_devices, consumer_hardware, supply_chain]
+    - ticker: MRVL
+      company: Marvell Technology
+      themes: [ai_networking, custom_silicon, data_center]
+    - ticker: QBTS
+      company: D-Wave Quantum
+      themes: [quantum_computing, ai_compute, high_beta]
+  private_context_only:
+    - company: Groq
+      themes: [ai_inference, accelerators, cloud]
+      rationale: No public stock ticker or listed options chain; use only as context for AI chip demand, inference cost, and competitive news.

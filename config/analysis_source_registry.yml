@@ -1,0 +1,301 @@
+# config/analysis_source_registry.yml
+#
+# Additive source registry for EagleSignal AI. This does not remove or replace
+# existing connectors. It defines the target source stack, reliability, access
+# method, and use case for analysis and recommendations.
+
+minimum_daily_stack:
+  - tradingview
+  - investing_com
+  - finviz
+  - reuters_markets
+  - sec_edgar
+  - bls
+  - bea
+  - fred
+  - cboe
+
+source_priority_rules:
+  - Official primary sources beat aggregators and commentary.
+  - Exchange/licensed market data beats free delayed quote pages for trade timing.
+  - Aggregator dashboards are useful for monitoring, but important signals must be verified against primary sources.
+  - Paid/professional terminals are optional upgrades, not required for local MVP operation.
+  - Social and opinion sources are sentiment/context only and must never dominate final recommendations.
+  - If a source is delayed, stale, paywalled, blocked, or manually checked only, mark that status in the trace.
+
+dashboard_and_research_platforms:
+  tradingview:
+    role: daily_dashboard
+    best_for: [charts, technicals, economic_calendar, earnings_calendar, alerts, sectors, futures]
+    access: manual_or_widget_or_api_if_licensed
+    reliability_rank: 70
+    status: planned_manual_reference
+  investing_com:
+    role: macro_global_dashboard
+    best_for: [economic_calendar, global_markets, futures, commodities, bonds, previous_forecast_actual]
+    access: manual_or_licensed_api
+    reliability_rank: 70
+    status: planned_manual_reference
+  finviz:
+    role: market_overview
+    best_for: [screeners, heat_maps, insider_trades, futures, forex, news]
+    access: manual_or_elite_if_licensed
+    reliability_rank: 65
+    status: planned_manual_reference
+    notes: Some quotes are delayed; never use alone for live trading decisions.
+  koyfin:
+    role: research_dashboard
+    best_for: [company_financials, macro_dashboards, global_markets, portfolios, reports]
+    access: manual_or_paid_platform
+    reliability_rank: 75
+    status: optional_paid_reference
+  reuters_markets:
+    role: market_news
+    best_for: [market_moving_news, global_markets, stocks, commodities, currencies, economics]
+    access: public_site_or_lseg_paid
+    reliability_rank: 85
+    status: planned_news_reference
+
+official_primary_sources:
+  sec_edgar:
+    best_for: [10k, 10q, 8k, s1, form4, insider_filings, company_facts, full_text_search]
+    access: official_api
+    reliability_rank: 100
+    status: implemented_partial
+    env_keys: [SEC_USER_AGENT]
+  bls:
+    best_for: [cpi, ppi, jobs, unemployment, wages, release_schedule]
+    access: official_api
+    reliability_rank: 100
+    status: implemented_partial
+    env_keys: [BLS_API_KEY]
+  bea:
+    best_for: [gdp, pce, personal_income, consumer_spending, corporate_profits]
+    access: official_api
+    reliability_rank: 100
+    status: planned_connector
+    env_keys: [BEA_API_KEY]
+  census_economic_indicators:
+    best_for: [retail_sales, housing_starts, construction, trade, inventories]
+    access: official_api
+    reliability_rank: 100
+    status: planned_connector
+  fred:
+    best_for: [historical_macro_charts, rates, yield_curve, macro_series, financial_conditions]
+    access: official_api
+    reliability_rank: 100
+    status: implemented_partial
+    env_keys: [FRED_API_KEY]
+  ism:
+    best_for: [manufacturing_pmi, services_pmi]
+    access: public_release_or_licensed
+    reliability_rank: 90
+    status: planned_connector
+  sp_global_pmi:
+    best_for: [global_pmi_releases]
+    access: public_release_or_licensed
+    reliability_rank: 85
+    status: planned_connector
+  federal_reserve:
+    best_for: [fomc_calendar, statements, minutes, speeches, policy_releases]
+    access: official_site_or_rss
+    reliability_rank: 100
+    status: planned_connector
+  cme_fedwatch:
+    best_for: [rate_cut_hike_probabilities, fed_funds_futures_expectations]
+    access: public_site_or_licensed
+    reliability_rank: 85
+    status: planned_reference
+  treasury_yield_curve:
+    best_for: [daily_yield_curve, treasury_rates, auctions, fiscal_data]
+    access: official_api
+    reliability_rank: 100
+    status: implemented_partial
+  eia:
+    best_for: [oil_inventories, gasoline, distillates, crude_supply, natural_gas]
+    access: official_api
+    reliability_rank: 100
+    status: planned_connector
+    env_keys: [EIA_API_KEY]
+  ofac:
+    best_for: [sanctions, geopolitical_economic_restrictions]
+    access: official_feed
+    reliability_rank: 100
+    status: planned_connector
+  federal_register:
+    best_for: [new_rules, regulations, presidential_documents]
+    access: official_api
+    reliability_rank: 100
+    status: implemented_partial
+  congress_gov:
+    best_for: [bills, legislation, committee_actions]
+    access: official_api
+    reliability_rank: 100
+    status: planned_connector
+    env_keys: [CONGRESS_API_KEY]
+  white_house:
+    best_for: [executive_orders, briefings, statements, policy_releases]
+    access: official_rss_or_site
+    reliability_rank: 100
+    status: implemented_partial
+  ftc_doj_sec_regulators:
+    best_for: [antitrust, consumer_protection, big_tech_regulation, market_rules]
+    access: official_sites_and_federal_register
+    reliability_rank: 100
+    status: implemented_partial
+
+company_and_events:
+  nasdaq_earnings_calendar:
+    best_for: [earnings_calendar]
+    access: public_site_or_licensed
+    reliability_rank: 80
+    status: planned_connector
+  yahoo_finance_calendar:
+    best_for: [earnings_calendar, company_events]
+    access: public_feed_or_yfinance
+    reliability_rank: 70
+    status: planned_connector
+  tradingview_earnings_calendar:
+    best_for: [earnings_calendar, revenue_calendar, dividend_calendar, ipo_calendar]
+    access: manual_or_widget_or_licensed
+    reliability_rank: 70
+    status: planned_manual_reference
+  company_investor_relations:
+    best_for: [press_releases, earnings_releases, presentations, webcasts, guidance]
+    access: company_rss_or_site
+    reliability_rank: 100
+    status: planned_connector
+  seeking_alpha:
+    best_for: [earnings_analysis, transcripts, investor_opinion]
+    access: public_or_paid
+    reliability_rank: 65
+    status: optional_reference
+    notes: Verify all claims against SEC/company releases.
+
+options_volatility_sentiment:
+  cboe_daily_market_statistics:
+    best_for: [vix, put_call_ratio, options_market_stats]
+    access: public_or_data_shop
+    reliability_rank: 95
+    status: implemented_partial
+  cboe_vix:
+    best_for: [vix_level, volatility_expectation]
+    access: public_site
+    reliability_rank: 95
+    status: implemented_partial
+  aaii_sentiment:
+    best_for: [weekly_retail_investor_sentiment]
+    access: public_or_paid
+    reliability_rank: 80
+    status: planned_connector
+  cnn_fear_greed:
+    best_for: [fear_greed_context]
+    access: public_site
+    reliability_rank: 65
+    status: planned_reference
+    notes: Supporting signal only.
+  macromicro:
+    best_for: [macro_sentiment_indicators, risk_indicators]
+    access: public_or_paid
+    reliability_rank: 70
+    status: planned_reference
+
+news_flow:
+  bloomberg_markets:
+    best_for: [professional_macro, rates, commodities, global_markets]
+    access: paid_or_public_site
+    reliability_rank: 90
+    status: optional_paid_reference
+  cnbc_markets:
+    best_for: [fast_market_reactions, interviews, futures, live_reaction]
+    access: public_site
+    reliability_rank: 75
+    status: planned_reference
+  marketwatch:
+    best_for: [quick_us_market_headlines, economic_calendar]
+    access: public_site
+    reliability_rank: 75
+    status: planned_reference
+  wsj_barrons:
+    best_for: [market_analysis, fed, bonds, earnings, sectors]
+    access: paid_or_public_site
+    reliability_rank: 85
+    status: optional_paid_reference
+  the_fly_benzinga_briefing:
+    best_for: [trader_headlines, upgrades_downgrades, rumors, unusual_movement]
+    access: paid
+    reliability_rank: 75
+    status: optional_paid_reference
+    notes: Treat rumors as unconfirmed until verified.
+  substack_x_accounts:
+    best_for: [sentiment, narratives, specialist_research]
+    access: public_or_paid
+    reliability_rank: 35
+    status: context_only
+    notes: Verify everything from official or reputable primary sources.
+
+professional_paid_platforms:
+  bloomberg_terminal:
+    best_for: [real_time_data, breaking_news, analytics, charts, portfolio_tools]
+    access: paid_terminal
+    reliability_rank: 95
+    status: optional_institutional_upgrade
+  lseg_workspace_reuters:
+    best_for: [market_sensitive_news, analytics, company_coverage, economics, politics]
+    access: paid_terminal
+    reliability_rank: 95
+    status: optional_institutional_upgrade
+  factset:
+    best_for: [financial_data, real_time_analytics, portfolio_tools]
+    access: paid_terminal
+    reliability_rank: 95
+    status: optional_institutional_upgrade
+  sp_capital_iq_pro:
+    best_for: [company_financials, market_data, private_public_company_data]
+    access: paid_terminal
+    reliability_rank: 95
+    status: optional_institutional_upgrade
+
+automation_apis:
+  alpha_vantage:
+    best_for: [stocks, etfs, indices, commodities, economic_indicators, fundamentals, technicals, news_sentiment]
+    env_keys: [ALPHAVANTAGE_API_KEY]
+    reliability_rank: 80
+    status: implemented_partial
+  financial_modeling_prep:
+    best_for: [financial_statements, earnings_calendar, historical_prices, market_news, company_data]
+    env_keys: [FMP_API_KEY]
+    reliability_rank: 80
+    status: planned_connector
+  nasdaq_data_link:
+    best_for: [exchange_data, financial_datasets, api, python_excel_integration]
+    env_keys: [NASDAQ_DATA_LINK_API_KEY]
+    reliability_rank: 85
+    status: planned_connector
+  polygon_massive:
+    best_for: [real_time_historical_stocks, options, forex, market_data]
+    env_keys: [POLYGON_API_KEY]
+    reliability_rank: 90
+    status: planned_connector
+  sec_data:
+    best_for: [official_filings, company_facts, insider_filings]
+    env_keys: [SEC_USER_AGENT]
+    reliability_rank: 100
+    status: implemented_partial
+
+market_day_workflow:
+  before_market_open:
+    check: [futures, treasury_yields, oil, dollar, vix, economic_calendar]
+    preferred_sources: [investing_com, tradingview, marketwatch, treasury_yield_curve, cboe_vix]
+  at_major_830am_et_releases:
+    check: [cpi, jobs, pce, gdp, retail_sales, jobless_claims]
+    preferred_sources: [bls, bea, census_economic_indicators, fred]
+  during_market:
+    check: [spy, qqq, iwm, sector_etfs, vix, bond_yields, top_movers, unusual_options]
+    preferred_sources: [tradingview, finviz, cboe_daily_market_statistics, koyfin]
+  after_market:
+    check: [earnings, guidance, sec_8k_filings, analyst_reactions]
+    preferred_sources: [nasdaq_earnings_calendar, sec_edgar, reuters_markets, seeking_alpha, company_investor_relations]
+  weekend:
+    check: [macro_trend, fed_probabilities, sector_rotation, next_week_earnings, geopolitical_risks]
+    preferred_sources: [fred, cme_fedwatch, tradingview, investing_com, reuters_markets, federal_register, white_house]

@@ -1,0 +1,296 @@
+# config/watchlist.yml
+
+assets:
+  - ticker: SPY
+    asset_type: etf
+    company_name: SPDR S&P 500 ETF Trust
+    exchange: NYSEARCA
+    strategy_tags: [index, s_and_p_500, market_regime, context_only]
+  - ticker: QQQ
+    asset_type: etf
+    company_name: Invesco QQQ Trust
+    exchange: NASDAQ
+    strategy_tags: [index, nasdaq_100, technology, market_regime, context_only]
+  - ticker: MU
+    asset_type: equity
+    company_name: Micron Technology, Inc.
+    exchange: NASDAQ
+    sector: Technology
+    industry: Semiconductors
+    strategy_tags: [focused_watchlist, ai_memory, dram, nand, storage, semiconductors, options]
+  - ticker: AMD
+    asset_type: equity
+    company_name: Advanced Micro Devices, Inc.
+    exchange: NASDAQ
+    sector: Technology
+    industry: Semiconductors
+    strategy_tags: [focused_watchlist, ai_gpu, compute, semiconductors, options]
+  - ticker: AVGO
+    asset_type: equity
+    company_name: Broadcom Inc.
+    exchange: NASDAQ
+    sector: Technology
+    industry: Semiconductors
+    strategy_tags: [focused_watchlist, ai_accelerators, networking, semiconductors, options]
+  - ticker: NVDA
+    asset_type: equity
+    company_name: NVIDIA Corporation
+    exchange: NASDAQ
+    sector: Technology
+    industry: Semiconductors
+    strategy_tags: [focused_watchlist, ai_gpu, compute, semiconductors, options]
+  - ticker: INTC
+    asset_type: equity
+    company_name: Intel Corporation
+    exchange: NASDAQ
+    sector: Technology
+    industry: Semiconductors
+    strategy_tags: [focused_watchlist, foundry, chips_act, semiconductors, options]
+  - ticker: AAPL
+    asset_type: equity
+    company_name: Apple Inc.
+    exchange: NASDAQ
+    sector: Technology
+    industry: Consumer Electronics
+    strategy_tags: [focused_watchlist, ai_devices, consumer_hardware, supply_chain, mega_cap, options]
+  - ticker: META
+    asset_type: equity
+    company_name: Meta Platforms, Inc.
+    exchange: NASDAQ
+    sector: Communication Services
+    industry: Internet Content & Information
+    strategy_tags: [focused_watchlist, ai_capex, hyperscaler, social, options]
+  - ticker: GOOGL
+    asset_type: equity
+    company_name: Alphabet Inc.
+    exchange: NASDAQ
+    sector: Communication Services
+    industry: Internet Content & Information
+    strategy_tags: [focused_watchlist, ai_capex, cloud, advertising, options]
+  - ticker: AMZN
+    asset_type: equity
+    company_name: Amazon.com, Inc.
+    exchange: NASDAQ
+    sector: Consumer Cyclical
+    industry: Internet Retail
+    strategy_tags: [focused_watchlist, ai_capex, cloud, retail, options]
+  - ticker: TSM
+    asset_type: equity
+    company_name: Taiwan Semiconductor Manufacturing Company Limited
+    exchange: NYSE
+    sector: Technology
+    industry: Semiconductors
+    strategy_tags: [focused_watchlist, foundry, taiwan_risk, semiconductors, options]
+  - ticker: ASML
+    asset_type: equity
+    company_name: ASML Holding N.V.
+    exchange: NASDAQ
+    sector: Technology
+    industry: Semiconductor Equipment
+    strategy_tags: [focused_watchlist, lithography, semiconductor_equipment, chips, options]
+  - ticker: LRCX
+    asset_type: equity
+    company_name: Lam Research Corporation
+    exchange: NASDAQ
+    sector: Technology
+    industry: Semiconductor Equipment
+    strategy_tags: [focused_watchlist, semiconductor_equipment, memory_capex, chips, options]
+  - ticker: SMCI
+    asset_type: equity
+    company_name: Super Micro Computer, Inc.
+    exchange: NASDAQ
+    sector: Technology
+    industry: Computer Hardware
+    strategy_tags: [focused_watchlist, ai_servers, compute, high_beta, options]
+  - ticker: DELL
+    asset_type: equity
+    company_name: Dell Technologies Inc.
+    exchange: NYSE
+    sector: Technology
+    industry: Computer Hardware
+    strategy_tags: [focused_watchlist, ai_servers, storage, enterprise_hardware, options]
+  - ticker: HPE
+    asset_type: equity
+    company_name: Hewlett Packard Enterprise Company
+    exchange: NYSE
+    sector: Technology
+    industry: Communication Equipment
+    strategy_tags: [focused_watchlist, ai_servers, networking, enterprise_hardware, options]
+  - ticker: WDC
+    asset_type: equity
+    company_name: Western Digital Corporation
+    exchange: NASDAQ
+    sector: Technology
+    industry: Computer Hardware
+    strategy_tags: [focused_watchlist, storage, nand, ai_storage, options]
+  - ticker: AMAT
+    asset_type: equity
+    company_name: Applied Materials, Inc.
+    exchange: NASDAQ
+    sector: Technology
+    industry: Semiconductor Equipment
+    strategy_tags: [focused_watchlist, semiconductor_equipment, capex_cycle, options]
+  - ticker: OKLO
+    asset_type: equity
+    company_name: Oklo Inc.
+    exchange: NYSE
+    sector: Utilities
+    industry: Regulated Electric
+    strategy_tags: [focused_watchlist, nuclear, energy_for_ai, trump_admin_policy, high_beta, options]
+  - ticker: PLTR
+    asset_type: equity
+    company_name: Palantir Technologies Inc.
+    exchange: NASDAQ
+    sector: Technology
+    industry: Software Infrastructure
+    strategy_tags: [focused_watchlist, ai, defense_ai, government_software, trump_admin_policy, options]
+  - ticker: ISRG
+    asset_type: equity
+    company_name: Intuitive Surgical, Inc.
+    exchange: NASDAQ
+    sector: Healthcare
+    industry: Medical Instruments & Supplies
+    strategy_tags: [focused_watchlist, robotics, medical_automation, options]
+  - ticker: RKLB
+    asset_type: equity
+    company_name: Rocket Lab Corporation
+    exchange: NASDAQ
+    sector: Industrials
+    industry: Aerospace & Defense
+    strategy_tags: [focused_watchlist, space, defense_space, government_contracts, high_beta, options]
+  - ticker: SNDK
+    asset_type: equity
+    company_name: Sandisk Corporation
+    exchange: NASDAQ
+    sector: Technology
+    industry: Computer Hardware
+    strategy_tags: [focused_watchlist, ai_storage, nand, storage, event_radar, high_beta, options]
+  - ticker: MRVL
+    asset_type: equity
+    company_name: Marvell Technology, Inc.
+    exchange: NASDAQ
+    sector: Technology
+    industry: Semiconductors
+    strategy_tags: [focused_watchlist, ai_networking, custom_silicon, semiconductors, data_center, options]
+  - ticker: QBTS
+    asset_type: equity
+    company_name: D-Wave Quantum Inc.
+    exchange: NYSE
+    sector: Technology
+    industry: Computer Hardware
+    strategy_tags: [focused_watchlist, quantum_computing, ai_compute, high_beta, event_driven, options]
+
+  # --- Trump / Administration Policy Basket (now actively scored) ---------
+  - ticker: DJT
+    asset_type: equity
+    company_name: Trump Media & Technology Group Corp.
+    exchange: NASDAQ
+    sector: Communication Services
+    industry: Internet Content & Information
+    strategy_tags: [trump_admin_policy, direct_trump_business, event_driven, high_beta, options]
+  - ticker: BAH
+    asset_type: equity
+    company_name: Booz Allen Hamilton Holding Corporation
+    exchange: NYSE
+    sector: Industrials
+    industry: Consulting Services
+    strategy_tags: [trump_admin_policy, federal_it, defense_consulting, options]
+  - ticker: LMT
+    asset_type: equity
+    company_name: Lockheed Martin Corporation
+    exchange: NYSE
+    sector: Industrials
+    industry: Aerospace & Defense
+    strategy_tags: [trump_admin_policy, defense_procurement, options]
+  - ticker: RTX
+    asset_type: equity
+    company_name: RTX Corporation
+    exchange: NYSE
+    sector: Industrials
+    industry: Aerospace & Defense
+    strategy_tags: [trump_admin_policy, defense_aerospace, options]
+  - ticker: NOC
+    asset_type: equity
+    company_name: Northrop Grumman Corporation
+    exchange: NYSE
+    sector: Industrials
+    industry: Aerospace & Defense
+    strategy_tags: [trump_admin_policy, defense_space, options]
+  - ticker: GD
+    asset_type: equity
+    company_name: General Dynamics Corporation
+    exchange: NYSE
+    sector: Industrials
+    industry: Aerospace & Defense
+    strategy_tags: [trump_admin_policy, defense_shipbuilding, options]
+  - ticker: GE
+    asset_type: equity
+    company_name: GE Aerospace
+    exchange: NYSE
+    sector: Industrials
+    industry: Aerospace & Defense
+    strategy_tags: [trump_admin_policy, defense_aerospace_engines, options]
+  - ticker: SMR
+    asset_type: equity
+    company_name: NuScale Power Corporation
+    exchange: NYSE
+    sector: Utilities
+    industry: Regulated Electric
+    strategy_tags: [trump_admin_policy, nuclear_ai_power, high_beta, options]
+  - ticker: CEG
+    asset_type: equity
+    company_name: Constellation Energy Corporation
+    exchange: NASDAQ
+    sector: Utilities
+    industry: Regulated Electric
+    strategy_tags: [trump_admin_policy, nuclear_power, data_centers, options]
+  - ticker: VST
+    asset_type: equity
+    company_name: Vistra Corp.
+    exchange: NYSE
+    sector: Utilities
+    industry: Independent Power Producers
+    strategy_tags: [trump_admin_policy, power_data_centers, options]
+  - ticker: TSLA
+    asset_type: equity
+    company_name: Tesla, Inc.
+    exchange: NASDAQ
+    sector: Consumer Cyclical
+    industry: Auto Manufacturers
+    strategy_tags: [trump_admin_policy, ev_energy_robotics, space_adjacency, high_beta, options]
+  - ticker: LUNR
+    asset_type: equity
+    company_name: Intuitive Machines, Inc.
+    exchange: NASDAQ
+    sector: Industrials
+    industry: Aerospace & Defense
+    strategy_tags: [trump_admin_policy, space_lunar, government_contracts, high_beta, options]
+  - ticker: ASTS
+    asset_type: equity
+    company_name: AST SpaceMobile, Inc.
+    exchange: NASDAQ
+    sector: Communication Services
+    industry: Telecom Services
+    strategy_tags: [trump_admin_policy, space_communications, high_beta, options]
+  - ticker: ORCL
+    asset_type: equity
+    company_name: Oracle Corporation
+    exchange: NYSE
+    sector: Technology
+    industry: Software Infrastructure
+    strategy_tags: [trump_admin_policy, ai_cloud_government, options]
+  - ticker: MSFT
+    asset_type: equity
+    company_name: Microsoft Corporation
+    exchange: NASDAQ
+    sector: Technology
+    industry: Software Infrastructure
+    strategy_tags: [trump_admin_policy, ai_cloud_government, hyperscaler, options]
+
+strategies:
+  default_horizons: [intraday, 1D, 5D, 20D]
+  enable_options_analysis: true
+  enable_social_sentiment: false
+  enable_news_scan: true
+  enable_sec_scan: true
+  enable_macro_scan: true

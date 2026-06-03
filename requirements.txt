@@ -1,0 +1,23 @@
+# EagleSignal AI — runtime dependencies
+# Core data + contracts
+pandas>=2.0
+numpy>=1.24
+pydantic>=2.5
+PyYAML>=6.0
+python-dotenv>=1.0
+requests>=2.31
+
+# Market / options data (development provider per DATA_SOURCES.md).
+# Additional real-data providers (Finnhub, Tiingo, Alpha Vantage), GDELT news,
+# Treasury FiscalData, Federal Register, BLS, StockTwits, and Reddit are all
+# reached over plain `requests` above — no extra SDKs or heavy ML frameworks
+# are required, so the Docker image stays slim and offline-safe.
+yfinance>=0.2.40
+
+# Reports / API
+jinja2>=3.1
+fastapi>=0.110
+uvicorn[standard]>=0.27
+
+# Optional ML (baseline models / calibration) — safe to keep installed
+scikit-learn>=1.3

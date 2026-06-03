@@ -1,0 +1,100 @@
+# Multi-factor scoring weights per strategy profile.
+# Each profile's component weights are normalized to sum to 1.0 at load time.
+# Components map 1:1 to the analysis engines in ARCHITECTURE.md section 2.7.
+
+default:
+  technical_structure: 14
+  price_volume_momentum: 14
+  fundamentals: 14
+  options_intelligence: 13
+  macro_regime: 10
+  news_events: 9
+  sentiment: 9
+  cross_market_correlation: 5
+  ensemble_forecast: 8
+  risk_penalty_adjustment: 5
+
+profiles:
+  intraday:
+    technical_structure: 23
+    price_volume_momentum: 27
+    fundamentals: 2
+    options_intelligence: 16
+    macro_regime: 5
+    news_events: 9
+    sentiment: 5
+    cross_market_correlation: 3
+    ensemble_forecast: 8
+    risk_penalty_adjustment: 2
+
+  swing:
+    technical_structure: 18
+    price_volume_momentum: 16
+    fundamentals: 13
+    options_intelligence: 13
+    macro_regime: 10
+    news_events: 9
+    sentiment: 6
+    cross_market_correlation: 4
+    ensemble_forecast: 7
+    risk_penalty_adjustment: 4
+
+  earnings:
+    technical_structure: 9
+    price_volume_momentum: 9
+    fundamentals: 21
+    options_intelligence: 23
+    macro_regime: 6
+    news_events: 13
+    sentiment: 6
+    cross_market_correlation: 4
+    ensemble_forecast: 5
+    risk_penalty_adjustment: 4
+
+  long_term:
+    technical_structure: 7
+    price_volume_momentum: 6
+    fundamentals: 36
+    options_intelligence: 5
+    macro_regime: 17
+    news_events: 10
+    sentiment: 4
+    cross_market_correlation: 6
+    ensemble_forecast: 5
+    risk_penalty_adjustment: 4
+
+  options_buying:
+    technical_structure: 16
+    price_volume_momentum: 16
+    fundamentals: 6
+    options_intelligence: 28
+    macro_regime: 6
+    news_events: 9
+    sentiment: 6
+    cross_market_correlation: 3
+    ensemble_forecast: 7
+    risk_penalty_adjustment: 3
+
+  options_selling:
+    technical_structure: 11
+    price_volume_momentum: 9
+    fundamentals: 10
+    options_intelligence: 32
+    macro_regime: 8
+    news_events: 8
+    sentiment: 4
+    cross_market_correlation: 4
+    ensemble_forecast: 4
+    risk_penalty_adjustment: 10
+
+  index_trend:
+    technical_structure: 20
+    price_volume_momentum: 18
+    fundamentals: 4
+    options_intelligence: 9
+    macro_regime: 20
+    news_events: 8
+    sentiment: 4
+    cross_market_correlation: 8
+    ensemble_forecast: 7
+    risk_penalty_adjustment: 2

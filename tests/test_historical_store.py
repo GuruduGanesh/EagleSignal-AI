@@ -57,12 +57,14 @@ def test_persist_run_snapshots_writes_prediction_options_and_iv_rows(tmp_path):
 
     assert summary["status"] == "ok"
     assert summary["prediction_snapshots"] == 1
+    assert summary["feature_snapshots"] == 1
     assert summary["options_expiry_snapshots"] == 1
     assert summary["options_chain_snapshots"] == 1
     assert summary["iv_snapshots"] == 1
     assert summary["evidence_snapshots"] == 0
     assert status["run_files"] == 1
     assert status["prediction_snapshots"] == 1
+    assert status["feature_snapshots"] == 1
     assert status["options_expiry_snapshots"] == 1
     assert status["options_chain_snapshots"] == 1
     assert status["iv_snapshots"] == 1

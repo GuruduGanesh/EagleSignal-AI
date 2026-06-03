@@ -243,6 +243,97 @@ def _compact_prediction(pred: PredictionResult, run_id: str, as_of: str) -> dict
     }
 
 
+def _compact_feature_row(pred: PredictionResult, run_id: str, as_of: str) -> dict[str, Any]:
+    """Flatten the prediction into a model-training feature row.
+
+    This is intentionally point-in-time and label-free. Labels are added later
+    by the reliability module only after forward bars/option marks exist.
+    """
+    market = pred.market_snapshot or {}
+    trace = pred.confidence_trace or {}
+    trend = pred.trend_impact or {}
+    radar = pred.event_radar or {}
+    options = pred.options_trade_idea or {}
+    top_expiry = (options.get("top_expiries") or [{}])[0] or {}
+    forecast = pred.forecast.model_dump(mode="json") if pred.forecast else {}
+    short_2d = (
+        pred.short_horizon_forecasts.get("2D").model_dump(mode="json")
+        if pred.short_horizon_forecasts.get("2D") else {}
+    )
+    short_3d = (
+        pred.short_horizon_forecasts.get("3D").model_dump(mode="json")
+        if pred.short_horizon_forecasts.get("3D") else {}
+    )
+    return {
+        "run_id": run_id,
+        "as_of": as_of,
+        "prediction_id": pred.prediction_id,
+        "ticker": pred.ticker,
+        "asset_type": pred.asset_type.value,
+        "horizon": pred.horizon,
+        "strategy": pred.strategy,
+        "direction": pred.direction.value,
+        "opportunity_score": pred.opportunity_score,
+        "confidence_score": pred.confidence_score,
+        "raw_confidence_score": trace.get("raw_confidence_score", pred.confidence_score),
+        "calibration_adjustment": (trace.get("calibration") or {}).get("adjustment"),
+        "risk_score": pred.risk_score,
+        "risk_level": pred.risk.risk_level.value,
+        "severity": pred.severity.value,
+        "current_price": market.get("current_price"),
+        "day_change_pct": market.get("day_change_pct"),
+        "last_volume": market.get("last_volume"),
+        "market_source": market.get("source"),
+        "component_scores": pred.component_scores,
+        "component_weights": pred.component_weights,
+        "directional_conviction_pct": trace.get("directional_conviction_pct"),
+        "data_quality_pct": trace.get("data_quality_pct"),
+        "coverage_pct": trace.get("coverage_pct"),
+        "agreement_pct": trace.get("agreement_pct"),
+        "evidence_count": trace.get("evidence_count"),
+        "missing_data_count": len(pred.missing_data or []),
+        "source_link_count": len(pred.source_links or []),
+        "news_items": trend.get("news_items"),
+        "avg_evidence_polarity": trend.get("avg_evidence_polarity"),
+        "policy_event_count": trend.get("policy_event_count"),
+        "social_net_sentiment": trend.get("social_net_sentiment"),
+        "forecast_prob_up": forecast.get("prob_up"),
+        "forecast_expected_return_pct": forecast.get("expected_return_pct"),
+        "forecast_p05_return_pct": forecast.get("p05_return_pct"),
+        "forecast_p95_return_pct": forecast.get("p95_return_pct"),
+        "forecast_2d_prob_up": short_2d.get("prob_up"),
+        "forecast_2d_expected_return_pct": short_2d.get("expected_return_pct"),
+        "forecast_3d_prob_up": short_3d.get("prob_up"),
+        "forecast_3d_expected_return_pct": short_3d.get("expected_return_pct"),
+        "event_radar_verdict": radar.get("verdict"),
+        "event_radar_breakout_score": radar.get("breakout_score"),
+        "event_radar_exhaustion_score": radar.get("exhaustion_score"),
+        "options_bias": options.get("bias"),
+        "options_strategy": options.get("strategy"),
+        "options_data_source": options.get("data_source"),
+        "options_algo_confluence": options.get("algo_confluence"),
+        "options_available_expirations": options.get("available_expirations"),
+        "top_option_expiration": top_expiry.get("expiration"),
+        "top_option_dte": top_expiry.get("days_to_expiry"),
+        "top_option_action": top_expiry.get("action"),
+        "top_option_confidence": top_expiry.get("confidence"),
+        "top_option_risk_gate": top_expiry.get("risk_gate"),
+        "top_option_price": top_expiry.get("reference_option_price"),
+        "top_option_spread_pct": top_expiry.get("bid_ask_spread_pct"),
+        "top_option_avg_iv": top_expiry.get("avg_iv"),
+        "top_option_iv_rank": top_expiry.get("iv_rank"),
+        "top_option_iv_realized_ratio": top_expiry.get("iv_realized_ratio"),
+        "top_option_delta": top_expiry.get("delta"),
+        "top_option_theta_per_day": top_expiry.get("theta_per_day"),
+        "top_option_volume": top_expiry.get("exact_contract_volume"),
+        "top_option_oi": top_expiry.get("exact_contract_oi"),
+        "top_option_uoa_score": top_expiry.get("unusual_activity_score"),
+        "top_option_oi_change_pct": top_expiry.get("oi_change_pct"),
+        "final_verdict_label": (pred.final_verdict or {}).get("label"),
+        "final_research_action": (pred.final_verdict or {}).get("research_action"),
+    }
+
+
 def _compact_evidence(result: "RunResult", run_id: str, as_of: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for ev in result.evidence.all():
@@ -277,6 +368,7 @@ def persist_run_snapshots(result: "RunResult", settings: Settings) -> dict[str, 
     day_dir.mkdir(parents=True, exist_ok=True)
 
     prediction_rows = [_compact_prediction(p, run_id, as_of) for p in result.predictions]
+    feature_rows = [_compact_feature_row(p, run_id, as_of) for p in result.predictions]
     option_rows: list[dict[str, Any]] = []
     chain_rows: list[dict[str, Any]] = []
     iv_rows: list[dict[str, Any]] = []
@@ -357,6 +449,7 @@ def persist_run_snapshots(result: "RunResult", settings: Settings) -> dict[str, 
     run_path.write_text(json.dumps(run_doc, indent=2, default=str, sort_keys=True), encoding="utf-8")
 
     _append_jsonl(base / "prediction_snapshots.jsonl", prediction_rows)
+    _append_jsonl(base / "feature_snapshots.jsonl", feature_rows)
     _append_jsonl(base / "options_expiry_snapshots.jsonl", option_rows)
     _append_jsonl(base / "options_chain_snapshots.jsonl", chain_rows)
     _append_jsonl(base / "iv_snapshots.jsonl", iv_rows)
@@ -368,6 +461,7 @@ def persist_run_snapshots(result: "RunResult", settings: Settings) -> dict[str, 
         "run_id": run_id,
         "run_file": str(run_path),
         "prediction_snapshots": len(prediction_rows),
+        "feature_snapshots": len(feature_rows),
         "options_expiry_snapshots": len(option_rows),
         "options_chain_snapshots": len(chain_rows),
         "iv_snapshots": len(iv_rows),
@@ -400,6 +494,7 @@ def load_snapshot_status(settings: Settings) -> dict[str, Any]:
         "run_files": len(runs),
         "latest_run_file": str(latest_run) if latest_run else None,
         "prediction_snapshots": _line_count(base / "prediction_snapshots.jsonl"),
+        "feature_snapshots": _line_count(base / "feature_snapshots.jsonl"),
         "options_expiry_snapshots": _line_count(base / "options_expiry_snapshots.jsonl"),
         "options_chain_snapshots": _line_count(base / "options_chain_snapshots.jsonl"),
         "iv_snapshots": _line_count(base / "iv_snapshots.jsonl"),

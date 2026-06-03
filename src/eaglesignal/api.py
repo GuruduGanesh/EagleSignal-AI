@@ -39,7 +39,12 @@ from .refresh import (
     run_refresh_and_analyze,
     run_refresh_jobs,
 )
-from .reliability import build_reliability_scorecard
+from .reliability import (
+    build_confidence_calibration_profile,
+    build_feature_label_dataset,
+    build_options_premium_scorecard,
+    build_reliability_scorecard,
+)
 from .reports.generator import render_html, write_reports
 
 app = FastAPI(title=f"{__product__} API", version=__version__)
@@ -158,6 +163,8 @@ def root() -> dict:
             "endpoints": ["/health", "/run", "/signals", "/ticker/{symbol}", "/dashboard",
                           "/manual-trades", "/advisor", "/markets", "/prices/refresh",
                           "/options/quote", "/snapshots/status", "/reliability/scorecard",
+                          "/reliability/options-scorecard", "/reliability/calibration",
+                          "/reliability/labels",
                           "/jobs/run", "/jobs/status", "/jobs/refresh-all",
                           "/jobs/tune", "/jobs/refresh/{category}", "/jobs/refresh-status"]}
 
@@ -365,6 +372,24 @@ def snapshots_status() -> dict:
 def reliability_scorecard(limit: int = 250) -> dict:
     """Measured post-recommendation hit-rate scorecard from stored snapshots."""
     return build_reliability_scorecard(get_settings(), limit=limit)
+
+
+@app.get("/reliability/options-scorecard")
+def options_premium_scorecard(limit: int = 500, target_days: int = 3) -> dict:
+    """Measured option-premium P/L from future stored option-chain marks."""
+    return build_options_premium_scorecard(get_settings(), limit=limit, target_days=target_days)
+
+
+@app.get("/reliability/calibration")
+def confidence_calibration(limit: int = 1000, min_samples: int = 20) -> dict:
+    """Confidence calibration profile from matured historical recommendations."""
+    return build_confidence_calibration_profile(get_settings(), limit=limit, min_samples=min_samples)
+
+
+@app.get("/reliability/labels")
+def feature_labels(limit: int = 1000) -> dict:
+    """Point-in-time features joined to matured outcome labels for future ML."""
+    return build_feature_label_dataset(get_settings(), limit=limit)
 
 
 @app.post("/jobs/run")

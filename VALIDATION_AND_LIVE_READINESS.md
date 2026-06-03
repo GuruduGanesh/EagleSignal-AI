@@ -20,8 +20,15 @@ Review date: 2026-06-02
 > ATM IV skew, term-structure slope, unusual-activity score, and exact-contract
 > OI-change versus the latest stored option snapshot. These are real chain/snapshot
 > analytics, not a paid institutional unusual-flow feed. Remaining options gaps
-> are paid flow/gamma vendors, full every-strike raw chain history, option-premium
-> outcome calibration, and full multi-factor no-lookahead options backtesting.
+> are paid flow/gamma vendors, full every-strike raw chain history, and full
+> multi-factor no-lookahead options backtesting.
+
+> **2026-06-03 feature/label + calibration update:** successful scans now write
+> model-ready `feature_snapshots.jsonl` rows; `/reliability/labels` joins matured
+> forward equity labels without lookahead; `/reliability/options-scorecard`
+> measures option-premium P/L from future stored marks for the same contract; and
+> `/reliability/calibration` builds a saved confidence-bucket calibration profile
+> that live scans can apply quickly while preserving raw confidence in the trace.
 
 > **2026-06-02 options-intelligence + ops update:** added a keyless earnings calendar (`ingestion/earnings.py`) feeding **earnings IV-crush gating** — long-premium expiries that bracket the next earnings date are capped to defined-risk/credit structures. The options engine now suggests **premium-selling** (bull-put/bear-call credit spreads, neutral iron condors) for rich-IV names instead of only buying, and every vertical carries est. net debit/credit, max gain, max loss, and breakeven. Weight tuning is now **multi-horizon** (intraday=1D, swing=5D, long-term/index=20D). Added an **X API daily read-cost guard** (`X_DAILY_READ_BUDGET`), an opt-in **LAN login lockdown** (`DASHBOARD_REQUIRE_LOGIN_ON_LAN`, loopback exempt), and 2026–2028 market holiday/half-day calendars. Full suite 60 passed; Docker image rebuilt and verified (`/health` ok, dashboard 200). These estimates are research-only 1σ approximations, not live multi-leg quotes; no automated real-money trading.
 
@@ -107,9 +114,10 @@ Still missing or incomplete for the full vision:
 - Options analytics are now stronger than the original MVP: IV rank/percentile
   (data-dependent), approximate Greeks, spread/liquidity gates, earnings IV-crush
   logic, ATM IV skew, term-structure slope, chain-derived unusual activity, and
-  exact-contract OI-change are implemented. Paid institutional unusual-flow/gamma
-  vendors, full every-strike raw chain history, and option-premium calibration
-  are still incomplete.
+  exact-contract OI-change are implemented. Option-premium scorecarding is also
+  implemented from future stored marks and becomes useful as scans accumulate.
+  Paid institutional unusual-flow/gamma vendors and full every-strike raw chain
+  history are still incomplete.
 - The ensemble forecast is a transparent statistical model (Monte-Carlo + agents), not a trained/calibrated neural net with a model registry.
 - Source freshness and reliability are recorded per evidence record but not yet hard-enforced as trade gates on every component.
 - `/dashboard` serves the latest generated dashboard quickly; live prices can now be patched in place via the toolbar **⟳ Live prices** button (`/prices/refresh`) without a full re-scan, but fresh news/options still require a **▶ Re-scan**.
@@ -142,7 +150,7 @@ Required hardening still remaining:
 | Trump/admin policy monitoring | Implemented | `government.py` White House RSS + Federal Register + GDELT terms, `impact.py`, policy theme docs | Add Truth Social/X official APIs if legally configured |
 | Trends/news impact | Implemented | `trend_impact` prediction field and Trends & Impact dashboard tab | Add historical trend charts |
 | Confidence trace links | Implemented | `confidence_trace` prediction field and Confidence Traces tab | Add model-card style downloadable trace bundle |
-| Short-term options edge | Implemented | `options_trade_idea` + `analyze_expiries`, Options Edge tab, yfinance + CBOE multi-source chain, default 5-DTE minimum, top-3 expirations with BUY CALL/BUY PUT/NO TRADE, up/down arrows, green/orange/red colors, underlying current price, option premium, bid/ask, lot size, volume, OI, defined-risk spreads, Greeks, IV/realized-vol ratio, IV Rank/Percentile from snapshots, ATM IV skew, term-structure slope, chain-derived unusual-activity score, exact-contract OI-change, sub-7-DTE risk gate for 5–6 DTE, algo confluence, Add option tracking | Need enough IV/OI snapshots for every ticker/expiry; add paid unusual-flow/gamma vendor and option-premium scorecard |
+| Short-term options edge | Implemented | `options_trade_idea` + `analyze_expiries`, Options Edge tab, yfinance + CBOE multi-source chain, default 5-DTE minimum, top-3 expirations with BUY CALL/BUY PUT/NO TRADE, up/down arrows, green/orange/red colors, underlying current price, option premium, bid/ask, lot size, volume, OI, defined-risk spreads, Greeks, IV/realized-vol ratio, IV Rank/Percentile from snapshots, ATM IV skew, term-structure slope, chain-derived unusual-activity score, exact-contract OI-change, sub-7-DTE risk gate for 5–6 DTE, algo confluence, Add option tracking | Need enough IV/OI/option-price snapshots for every ticker/expiry; add paid unusual-flow/gamma vendor |
 | Sortable dashboard tables | Implemented | Generic dashboard table sorter | Add persistent sort preferences |
 | Stay on current tab after refresh | Implemented | Active tab persisted via URL hash + `localStorage`; toolbar Reload/Live-prices/Re-scan on every tab | — |
 | Per-page live data refresh | Implemented | Sticky toolbar `⟳ Live prices` (`/prices/refresh`) + `▶ Re-scan` (`/jobs/run`) | Auto-poll option |
@@ -157,8 +165,8 @@ Required hardening still remaining:
 | IV Rank / IV Percentile | Implemented-data-dependent | `iv_rank_metrics()`, Options Edge IV Rank column, Options Risk Gate caps | Needs ~20+ stored IV observations per ticker/expiry |
 | Weekly auto-retune | Implemented | `eaglesignal auto-tune`, `/jobs/tune`, `run_weekly_tune_job.ps1`, `EagleSignalAI-WeeklyRetune` installer entry | Retunes price-derived engines only until source snapshots mature |
 | GPU Monte-Carlo | Implemented-optional | `ENABLE_GPU_MONTE_CARLO`, `MONTE_CARLO_PATHS`, settings-wired forecast call, CuPy backend with NumPy fallback | Requires local CuPy/CUDA validation before enabling high path counts |
-| Reliability scorecard | Implemented-data-dependent | `/reliability/scorecard` from `prediction_snapshots.jsonl` | Fresh calls remain pending until forward bars exist; option-premium scorecard needs historical option marks |
-| Options prediction | Implemented-partial | `options_chain.py`, `analysis/options.py`, `historical_store.py` | Implemented: multi-expiry chains, 5-DTE floor, top expiry ranking, approximate Greeks, IV Rank/Percentile when snapshots exist, ATM skew, term slope, spread filters, earnings IV-crush gate, chain-derived unusual activity, OI change, and expiration selection. Pending: paid flow/gamma, full every-strike history, option-premium backtest/calibration |
+| Reliability scorecard | Implemented-data-dependent | `/reliability/scorecard`, `/reliability/options-scorecard`, `/reliability/calibration`, `/reliability/labels` | Fresh calls remain pending until forward bars / future option marks exist |
+| Options prediction | Implemented-partial | `options_chain.py`, `analysis/options.py`, `historical_store.py`, `reliability.py` | Implemented: multi-expiry chains, 5-DTE floor, top expiry ranking, approximate Greeks, IV Rank/Percentile when snapshots exist, ATM skew, term slope, spread filters, earnings IV-crush gate, chain-derived unusual activity, OI change, expiration selection, and option-premium outcome scorecard. Pending: paid flow/gamma and full every-strike history |
 | Technical indicators/patterns | Partial-good | `analysis/technical.py`, `analysis/patterns.py`, tests | Add VWAP intraday, opening range, support/resistance, candlestick library or broader pattern set |
 | Fundamentals and balance sheets | Partial | SEC company facts in `sec_edgar.py`, `fundamentals.py` | More XBRL tags, ratios, restatements, segment data, growth rates, filing-date-safe historical features |
 | SEC filings | Partial | latest 10-K/10-Q/8-K/Form 4 metadata | Filing text parser, material-event extractor, Form 4 insider trend, 13F trend |
@@ -390,10 +398,10 @@ P1:
 
 - Add provider abstraction and fallback priority.
 - Add concurrent fetching with rate-limit manager.
-- Add feature store and prediction outcome store.
+- Expand the implemented feature/label store into DuckDB/Parquet once enough rows accumulate.
 - Add paid options unusual-flow/gamma vendor integration and full every-strike chain archive. Chain-derived IV Rank, skew, term-structure, unusual-activity, and OI-change analytics are already implemented.
 - Add earnings calendar and IV crush event logic.
-- Add walk-forward backtesting and calibration reports.
+- Expand the implemented calibration endpoints into full walk-forward backtesting and calibration reports.
 - Add interactive dashboard filters and ticker detail pages.
 
 P2:

@@ -25,6 +25,7 @@ from .ingestion.sec_edgar import SecData, fetch_sec
 from .manual_trading import mark_manual_trades
 from .paper_trading import update_paper_trades
 from .prediction.engine import predict
+from .reliability import apply_confidence_calibration
 from .schemas import AssetEntity, AssetType, PredictionResult
 from .utils.evidence import EvidenceStore
 from .utils.logging import get_logger
@@ -146,10 +147,14 @@ def run_pipeline(
             if pred:
                 result.predictions.append(pred)
 
+    calibration_summary = apply_confidence_calibration(result.predictions, settings)
+    result.snapshots["confidence_calibration"] = calibration_summary
+
     # Rank by opportunity score, strongest setups first.
     result.predictions.sort(key=lambda p: p.opportunity_score, reverse=True)
     update_paper_trades(result.predictions, settings.data_dir)
     mark_manual_trades(result.predictions, settings.data_dir)
-    result.snapshots = persist_run_snapshots(result, settings)
+    snapshot_summary = persist_run_snapshots(result, settings)
+    result.snapshots = {**result.snapshots, **snapshot_summary}
     log.info("Pipeline complete: %d predictions", len(result.predictions))
     return result

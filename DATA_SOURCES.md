@@ -266,10 +266,31 @@ Derived analytics (`analysis/options.py`):
   and is data-dependent until each ticker/expiry has enough observations. Options
   Edge also computes chain-derived ATM IV skew, next-expiry term-structure slope,
   unusual-activity score, and exact-contract OI-change versus stored snapshots.
-  Paid institutional unusual-flow/gamma vendors and full every-strike raw chain
-  archiving remain future upgrades.
+  `/reliability/options-scorecard` measures option-premium P/L from later stored
+  marks for the same exact contract; rows remain pending until future scans
+  observe that contract again. Paid institutional unusual-flow/gamma vendors and
+  full every-strike raw chain archiving remain future upgrades.
 
-## 5a. Dashboard live-refresh UX
+## 5a. Feature Store, Labels, and Calibration
+
+Successful scans write point-in-time, label-free feature rows to
+`data/historical_snapshots/feature_snapshots.jsonl`. The rows flatten the current
+market snapshot, component scores/weights, forecast bands, options edge, event
+radar, source coverage, freshness, and verdict fields exactly as seen at scan
+time.
+
+Labels are deliberately added later:
+
+- `/reliability/labels` joins feature rows to matured forward equity outcomes
+  after future bars exist.
+- `/reliability/scorecard` measures equity directional hit rate/returns.
+- `/reliability/options-scorecard` measures option-premium P/L from later stored
+  contract marks.
+- `/reliability/calibration` builds a saved confidence-bucket calibration profile.
+  Live scans read that saved profile quickly and preserve raw confidence in
+  `confidence_trace.raw_confidence_score`.
+
+## 5b. Dashboard live-refresh UX
 
 Every tab of the HTML dashboard shares a sticky toolbar with three controls, and
 the active tab is **persisted** (URL hash + `localStorage`) so a reload keeps you
@@ -282,7 +303,7 @@ on the same tab instead of snapping back to Overview:
 - **▶ Re-scan** — POSTs `/jobs/run` for a full live re-scan, polls `/jobs/status`,
   and auto-reloads on completion while staying on the current tab.
 
-## 5b. Parallel category refresh jobs (`refresh.py`)
+## 5c. Parallel category refresh jobs (`refresh.py`)
 
 The Jobs tab splits the refresh into **independent category jobs that run
 concurrently in a thread pool** (`ThreadPoolExecutor`), so a "refresh all" is

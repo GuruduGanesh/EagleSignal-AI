@@ -14,6 +14,7 @@ Last updated: 2026-06-03 11:48 America/Chicago
 - Backup AFTER the calendars + event-aware + Ollama/GPU sentiment batch: `backups/stock-market-backup-20260602-164000-calendars-sentiment.zip`.
 - Backup AFTER the 2026-06-03 GPU + 5-DTE tightening batch: `backups/stock-market-backup-20260603-1000-gpu-dte.zip`.
 - Backup AFTER the 2026-06-03 options analytics fix: `backups/stock-market-backup-20260603-1155-options-analytics.zip`.
+- Backup BEFORE the 2026-06-03 feature/label + calibration batch: `backups/stock-market-backup-20260603-122821-feature-label-calibration.zip`.
 - Backup excludes heavy/generated folders such as `.venv`, `reports`, `data`, caches, and prior backups.
 
 ## Active Objective
@@ -125,6 +126,38 @@ data-lead-time (IV-Rank/scorecards need weeks of snapshots) or blocked on you
 
 ## Completed
 
+- Completed (2026-06-03 feature/label + calibrated-confidence batch):
+  - Added point-in-time `feature_snapshots.jsonl` rows for every successful
+    prediction scan. These rows flatten market, component, forecast, options,
+    event, freshness, and verdict features without future labels.
+  - Added `/reliability/labels`, which joins stored feature rows to matured
+    forward equity labels only after forward bars exist, avoiding lookahead.
+  - Added `/reliability/options-scorecard`, which measures option-premium P/L
+    from later stored marks for the same exact option contract. Rows remain
+    pending until future option-chain snapshots exist.
+  - Added `/reliability/calibration`, which builds and saves a historical
+    confidence-bucket calibration profile from matured equity outcomes.
+  - Live prediction scans now read the latest saved calibration profile quickly:
+    raw confidence is preserved in `confidence_trace.raw_confidence_score`;
+    `confidence_trace.calibration` explains whether confidence was adjusted or
+    why it was left raw.
+  - Jobs tab now exposes Reliability Scorecard, Options P/L Scorecard,
+    Confidence Calibration, and Feature Labels buttons.
+  - Validation completed so far:
+    - compile changed Python files — passed.
+    - focused reliability/historical tests — passed: 6 passed.
+    - full unit test suite — passed: 77 passed, 1 existing datetime warning.
+    - re-rendered `reports/2026-06-03/dashboard.html` from 41 signals.
+    - rebuilt/restarted Docker API with `docker compose up -d --build api`.
+    - `/health` returned `ok`.
+    - `/snapshots/status` shows `feature_snapshots=2` after a real two-ticker
+      pipeline smoke run that did not overwrite the 41-row dashboard report.
+    - `/reliability/options-scorecard`, `/reliability/calibration`, and
+      `/reliability/labels` returned `ok`; current rows are correctly pending
+      until future bars/option marks exist.
+    - In-app browser verified Jobs tab buttons for Options P/L Scorecard,
+      Confidence Calibration, and Feature Labels, plus the new Calibration
+      column in Confidence Traces with 41 rows.
 - Completed (2026-06-03 options analytics fix):
   - Converted several "pending options analysis" gaps into implemented,
     source-labelled analytics without removing existing Options Edge behavior.
@@ -377,7 +410,8 @@ data-lead-time (IV-Rank/scorecards need weeks of snapshots) or blocked on you
 - IV Rank/IV Percentile needs ~20+ stored IV observations per ticker/expiry before the dashboard can show real ranks instead of "need N/20".
 - Full raw every-strike options-chain archive beyond selected expiry/contract snapshots.
 - Full raw provider payload snapshots for every non-price data source.
-- Option-premium outcome scorecard once historical option marks accumulate.
+- Option-premium scorecard is implemented, but useful values require future
+  stored option marks for the same contracts to accumulate.
 - GPU ML model training, embeddings/RAG similar-event memory, and non-price-engine tuning after enough point-in-time snapshots exist.
 
 ## Validation Commands

@@ -24,9 +24,9 @@ Rank, options analytics, and a real ML model.
 | 0.2 | **Point-in-time snapshots** of fundamentals, macro, sentiment, news, options at each scan | L | 🟡⏳ | Compact prediction/run snapshots plus evidence-source snapshots now persist; full raw provider payload archiving is still pending. |
 | 0.3 | **Historical options chains** store (strikes, IV, OI, volume, Greeks over time) | L | 🟡⏳ | Selected expiry/contract snapshots now persist to `options_chain_snapshots.jsonl` and power exact-contract OI-change comparisons; full every-strike raw chain history still pending. |
 | 0.4 | **Earnings & corporate-event calendar** (historical + forward) | M | ✅ DONE | `ingestion/earnings.py` (keyless yfinance, graceful fallback) wires next-earnings date into the engine + options analysis; powers §1.5. Historical event store still pending. |
-| 0.5 | **Feature/label store** built from the ADR-002 walk-forward replay | L | 🔲 | Training data for the GPU ML model (§4.3) |
+| 0.5 | **Feature/label store** built from point-in-time live scans | L | ✅ DONE ⏳ | `feature_snapshots.jsonl` now stores label-free model features per prediction; `/reliability/labels` joins matured forward labels without lookahead. GPU ML still needs enough accumulated rows. |
 | 0.6 | **Time-series storage** decision (Parquet files vs SQLite/DuckDB vs a TSDB) | S–M | 🔲 | Architecture for 0.1–0.5; keep it simple (Parquet/DuckDB) first |
-| 0.7 | **Live recommendation outcome tracking** — log every issued call + realized forward result for a true hit-rate scorecard | M | 🟡⏳ | `/reliability/scorecard` now evaluates matured prediction snapshots; fresh calls stay pending until forward bars exist. |
+| 0.7 | **Live recommendation outcome tracking** — log every issued call + realized forward result for a true hit-rate scorecard | M | ✅⏳ | `/reliability/scorecard` evaluates matured equity snapshots; `/reliability/options-scorecard` evaluates option-premium P/L from future stored contract marks. Fresh calls stay pending until forward data exists. |
 
 **Lead-time note:** 0.1 and 0.2 produce no value on day one — they must *accumulate*. Stand
 them up early so the data is ready when the dependent features (IV Rank, full tuning, ML) land.
@@ -60,8 +60,8 @@ and its sub-7-DTE penalty is too soft.
 | 2.2 | **Weekly auto re-tune** wired into scheduled jobs | S | ✅ DONE | `eaglesignal auto-tune`, `/jobs/tune`, `run_weekly_tune_job.ps1`, and `EagleSignalAI-WeeklyRetune` task installer path added. |
 | 2.3 | **Multi-horizon tuning** — tune `intraday` at 1D, swing-family at 5D, long_term at 20D separately | M | ✅ DONE | `tune_multi_horizon()` groups profiles by natural horizon (`PROFILE_HORIZON_DAYS`) and replays each once; weekly auto-retune now uses it so `intraday` is fitted at 1D. |
 | 2.3a | **Near-term 2D/3D forecast bands** for short-term/options review | S | ✅ DONE | New scans persist `short_horizon_forecasts` with 2D and 3D Monte-Carlo P(up), median return, and p05/p95 bands beside the main horizon forecast. |
-| 2.4 | **Tune the non-price engines** (fundamentals/options/macro/sentiment) | L | 🔲 | Blocked on §0.2 point-in-time snapshots |
-| 2.5 | **Full-prediction backtest + accuracy scorecard** (not just technical) | L | 🔲 | Blocked on §0.2/§0.7; the real "how reliable is it" answer |
+| 2.4 | **Tune the non-price engines** (fundamentals/options/macro/sentiment) | L | 🟡⏳ | Feature rows now persist; tuning still needs enough matured labels plus no-lookahead calibration tests. |
+| 2.5 | **Full-prediction backtest + accuracy scorecard** (not just technical) | L | 🟡⏳ | Equity/options scorecard endpoints are live and data-dependent; full walk-forward multi-factor calibration and GPU ML promotion gates remain. |
 | 2.6 | **Event-aware confidence** — reduce/flag confidence near high-impact scheduled events (FOMC/jobs/CPI/earnings) | M | ✅ DONE | New `ingestion/calendars.py` (FOMC + rule-based macro + earnings); engine applies a 0.85 confidence haircut + event-risk warning + invalidation when a high-impact event falls inside the horizon. Surfaced in `confidence_trace.event_calendar` and `/calendar`. |
 
 ---
@@ -106,7 +106,7 @@ confidence calibration, risk gating, paper-trade outcome tracking, and post-trad
 | G.4 | **GPU Monte-Carlo for equities + options** | M | ✅ DONE | Forecast Monte Carlo has optional CuPy acceleration, deterministic CPU fallback, and settings-wired path/GPU controls. |
 | G.5 | **Historical feature store + GPU ML model training** | XL | 🔲⏳ | Main path toward measurable accuracy improvement; depends on §0.2/§0.5 |
 | G.6 | **Similar-event memory using embeddings/RAG** | L | 🔲 | Finds SNDK-like breakout/exhaustion setups and past event analogs |
-| G.7 | **Reliability scorecard** for hit rate, option P/L, false positives, false negatives | M–L | 🟡⏳ | Prediction hit-rate endpoint is live at `/reliability/scorecard`; option-premium outcome scoring needs historical option marks to mature. |
+| G.7 | **Reliability scorecard** for hit rate, option P/L, false positives, false negatives | M–L | ✅⏳ | `/reliability/scorecard`, `/reliability/options-scorecard`, `/reliability/calibration`, and `/reliability/labels` are live; values mature as forward bars/option marks accumulate. |
 | G.8 | **Model ensemble**: rules + ML + LLM explanation + risk gate | L | 🔲 | More robust than trusting one model or one confidence number |
 
 Recommended GPU sequence:

@@ -22,6 +22,9 @@ htmlcov/
 
 # Generated outputs
 reports/
+!src/eaglesignal/reports/
+!src/eaglesignal/reports/__init__.py
+!src/eaglesignal/reports/generator.py
 data/
 *.log
 

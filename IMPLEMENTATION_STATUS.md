@@ -4,7 +4,7 @@
 > meaningful change so a restarted terminal, rate-limit recovery, or new Codex
 > turn can resume quickly without losing context.
 
-Last updated: 2026-06-03 11:48 America/Chicago
+Last updated: 2026-06-04 01:23 America/Chicago
 
 ## Backup
 
@@ -21,6 +21,78 @@ Last updated: 2026-06-03 11:48 America/Chicago
 
 Implement the first practical batch from `FUTURE_WORK.md` while preserving all
 existing dashboard, options, manual-trade, jobs, and watchlist behavior.
+
+## Completed (2026-06-04 Trade Summary lower-premium grouping)
+
+- Tightened the execution-style strategy selection so Trade Summary and Trade
+  Strategy only promote option contracts with:
+  - DTE at or above `MIN_OPTION_DAYS_TO_EXPIRY`, with a hard floor of 5 days
+  - a real quoted option premium greater than 0 and at or below `$50`
+  - an actionable call/put signal, not `NO TRADE`
+- Trade Summary now renders each ticker as a parent row and groups up to the
+  top 3 qualifying expiries under that ticker.
+- The grouped expiry rows remain collapsed until clicked, include the exact
+  option contract/expiry/DTE/strike/entry/stop/exit and Add-option action, and
+  keep sorting group-safe so expiries do not get separated from their ticker.
+- Tickers without a lower-priced qualifying option remain visible as stock-only
+  plans with the reason shown in the Option details cell.
+- Options Edge remains broad research context; the lower-premium cap is applied
+  to the practical Trade Summary/Trade Strategy promotion layer.
+
+## Completed (2026-06-04 Compact trade summary)
+
+- Added a new **Trade Summary** dashboard tab before the detailed Trade
+  Strategy tab.
+- Trade Summary is sorted best-first using a soft ranking that rewards
+  confidence, opportunity, directional clarity, option readiness, liquidity,
+  tight spreads, and lower risk.
+- Stock-only rows show only the stock plan fields:
+  current price, target price, target days, stop loss, exit price, bias,
+  probability/forecast, and summary reason.
+- Option-qualified rows add only the option-specific details:
+  expiry, DTE, contract, strike, option entry, option stop, option exit,
+  readiness/gate, spread %, volume/OI, IV Rank, and delta/theta.
+- **Add option** remains wired into Manual Trade Journal for option rows.
+- Live price refresh recalculates current/target/stop/exit cells in both Trade
+  Summary and Trade Strategy.
+- Existing detailed Trade Strategy tab remains in place and is also best-first.
+
+## Completed (2026-06-04 Jobs refresh/generate schedule)
+
+- Added a clear **Generate from newest data** button to the Jobs tab.
+- The button queues the existing `/jobs/refresh-all` path with `analyze=true`,
+  so all source groups refresh in parallel first, then the prediction pipeline
+  runs and writes a fresh dashboard/report.
+- Kept the existing **Refresh ALL source cache** path for category/status-only
+  refreshes, with the existing `+ analyze` checkbox still available.
+- Browser-side source auto-refresh now queues refresh + analysis every **2
+  hours** instead of the prior 30-minute cache-only refresh.
+- Updated `scripts/install_windows_tasks_split.ps1` to retire the old
+  `EagleSignalAI-Intraday30m` 5-minute task and register
+  `EagleSignalAI-RefreshAnalyze2h`, which runs grouped parallel refresh +
+  analysis every **2 hours** while the laptop is on.
+- Updated README/status text so restarted terminals know the active schedule.
+
+## Completed (2026-06-04 Trade Strategy tab)
+
+- Added a new dashboard tab: **Trade Strategy**.
+- The tab converts the same shared prediction/options analysis into a concise
+  research plan per ticker:
+  - current underlying price
+  - bullish/bearish bias
+  - target price and target-days window
+  - stop loss and exit price
+  - selected option expiry, DTE, contract, strike, option entry, option stop,
+    and option exit
+  - option confidence, readiness/risk gate, spread %, volume/OI, IV Rank, and
+    delta/theta
+- The tab reuses existing Manual Trades wiring via **Add option**, so a selected
+  strategy can be tracked in the manual journal without creating any broker
+  order.
+- Live price refresh now recalculates Trade Strategy current/target/stop/exit
+  cells in-place when `/prices/refresh` returns new prices.
+- Implementation is additive in `src/eaglesignal/reports/generator.py`; no
+  prediction-engine, manual-trade, jobs, or options-engine behavior was removed.
 
 ## Completed (2026-06-02 Options Edge UX overhaul — critical page)
 
@@ -201,9 +273,8 @@ data-lead-time (IV-Rank/scorecards need weeks of snapshots) or blocked on you
     Verified next run: 2026-06-04 08:35.
   - `EagleSignalAI-EveningBrief`: full prediction scan daily at **20:35 local**.
     Verified next run: 2026-06-03 20:35.
-  - `EagleSignalAI-Intraday30m`: kept existing task name, changed cadence to
-    grouped refresh + analysis every **5 minutes** from 09:00 for 7h30m daily.
-    Verified next run: 2026-06-03 10:25, repeat every 5 minutes.
+  - Superseded 2026-06-04: the prior `EagleSignalAI-Intraday30m` 5-minute
+    cadence was retired and replaced by `EagleSignalAI-RefreshAnalyze2h`.
   - `EagleSignalAI-WeeklyRetune`: installed/verified weekly Saturday 20:00.
   - Updated README, WORKFLOW, and dashboard text to match the new cadence.
 - Completed (2026-06-03 GPU + options expiry tightening):

@@ -1,9 +1,9 @@
 $ErrorActionPreference = "Stop"
 
-# Intraday grouped refresh: runs the same scheduled/manual collection path as
-# the browser Jobs tab. Sources are grouped and refreshed in parallel before the
-# focused watchlist is re-analyzed, so every important source category is
-# considered without becoming one giant serial process.
+# Two-hour grouped refresh/analyze: runs the same scheduled/manual collection
+# path as the browser Jobs tab. Sources are grouped and refreshed in parallel
+# before the focused watchlist is re-analyzed, so every important source
+# category is considered without becoming one giant serial process.
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot

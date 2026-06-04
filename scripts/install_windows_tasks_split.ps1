@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 #
 #   1. EagleSignalAI-MorningBrief  full research scan daily at 08:35 local
 #   2. EagleSignalAI-EveningBrief  full research scan daily at 20:35 local
-#   3. EagleSignalAI-Intraday30m   grouped parallel refresh + analysis every 5 min, 09:00-16:30
+#   3. EagleSignalAI-RefreshAnalyze2h grouped parallel refresh + analysis every 2 hours
 #   4. EagleSignalAI-WeeklyRetune  ADR-002 walk-forward retune every Saturday
 #
 # Per-user tasks: no Administrator elevation required.
@@ -83,10 +83,14 @@ Register-EagleTask "EagleSignalAI-EveningBrief" `
     (New-ScheduledTaskTrigger -Daily -At 8:35PM) `
     $FullRunner "EagleSignal evening full research brief at 20:35 local."
 
-# 3. Intraday grouped refresh + focused re-analysis -- every 5 min during the session.
-# The task keeps the old name for continuity, but the cadence is now 5 minutes.
-Register-EagleMinuteTask "EagleSignalAI-Intraday30m" `
-    $LightRunner 5 "09:00" "07:30" "EagleSignal grouped parallel refresh and focused re-analysis every 5 minutes during the session."
+# 3. Grouped refresh + focused re-analysis -- every 2 hours while the laptop is on.
+# Retire the old 5-minute task name if it exists so the active cadence is clear.
+if (Get-ScheduledTask -TaskName "EagleSignalAI-Intraday30m" -ErrorAction SilentlyContinue) {
+    Unregister-ScheduledTask -TaskName "EagleSignalAI-Intraday30m" -Confirm:$false
+    Write-Host "Removed retired task: EagleSignalAI-Intraday30m"
+}
+Register-EagleMinuteTask "EagleSignalAI-RefreshAnalyze2h" `
+    $LightRunner 120 "08:00" "14:00" "EagleSignal grouped parallel refresh and focused re-analysis every 2 hours while the laptop is on."
 
 # 4. Weekly retune -- refresh fitted weights from measured walk-forward replay.
 Register-EagleTask "EagleSignalAI-WeeklyRetune" `

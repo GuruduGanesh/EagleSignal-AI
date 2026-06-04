@@ -76,14 +76,26 @@ trump_and_administration_policy:
     - ticker: AMD
       company: Advanced Micro Devices
       theme: ai_gpu_export_controls
+    - ticker: QCOM
+      company: Qualcomm
+      theme: edge_ai_mobile_auto_chips
+    - ticker: ARM
+      company: Arm Holdings
+      theme: chip_ip_edge_ai_export_controls
     - ticker: AVGO
       company: Broadcom
       theme: ai_networking_chips
     - ticker: MRVL
       company: Marvell Technology
       theme: ai_networking_custom_silicon
+    - ticker: STX
+      company: Seagate Technology
+      theme: ai_storage_hard_drives_data_center
     - ticker: QBTS
       company: D-Wave Quantum
+      theme: quantum_ai_compute_high_beta
+    - ticker: IONQ
+      company: IonQ
       theme: quantum_ai_compute_high_beta
     - ticker: ORCL
       company: Oracle
@@ -106,6 +118,9 @@ trump_and_administration_policy:
     - ticker: HPE
       company: Hewlett Packard Enterprise
       theme: ai_servers_networking
+    - ticker: APP
+      company: AppLovin
+      theme: ai_adtech_mobile_apps
   private_context_only:
     - company: Groq
       theme: ai_inference_accelerators
@@ -126,6 +141,12 @@ top_15_ai_gpu_compute_storage_semis_robotics_space:
     - ticker: AVGO
       company: Broadcom
       themes: [ai_networking, chips]
+    - ticker: QCOM
+      company: Qualcomm
+      themes: [edge_ai, mobile_ai, automotive_chips]
+    - ticker: ARM
+      company: Arm Holdings
+      themes: [chip_ip, edge_ai, data_center]
     - ticker: TSM
       company: Taiwan Semiconductor Manufacturing
       themes: [semiconductor_foundry]
@@ -153,6 +174,9 @@ top_15_ai_gpu_compute_storage_semis_robotics_space:
     - ticker: WDC
       company: Western Digital
       themes: [storage]
+    - ticker: STX
+      company: Seagate Technology
+      themes: [storage, ai_storage, hard_drives]
     - ticker: TSLA
       company: Tesla
       themes: [robotics, autonomous_compute]
@@ -178,6 +202,21 @@ additional_focused_ai_context:
     - ticker: QBTS
       company: D-Wave Quantum
       themes: [quantum_computing, ai_compute, high_beta]
+    - ticker: IONQ
+      company: IonQ
+      themes: [quantum_computing, ai_compute, high_beta]
+    - ticker: QCOM
+      company: Qualcomm
+      themes: [edge_ai, mobile_ai, automotive_chips]
+    - ticker: ARM
+      company: Arm Holdings
+      themes: [chip_ip, edge_ai, semiconductors]
+    - ticker: APP
+      company: AppLovin
+      themes: [ai_adtech, mobile_apps, high_beta]
+    - ticker: STX
+      company: Seagate Technology
+      themes: [ai_storage, hard_drives, data_center]
   private_context_only:
     - company: Groq
       themes: [ai_inference, accelerators, cloud]

@@ -4,7 +4,7 @@
 > meaningful change so a restarted terminal, rate-limit recovery, or new Codex
 > turn can resume quickly without losing context.
 
-Last updated: 2026-06-04 01:23 America/Chicago
+Last updated: 2026-06-04 02:02 America/Chicago
 
 ## Backup
 
@@ -21,6 +21,39 @@ Last updated: 2026-06-04 01:23 America/Chicago
 
 Implement the first practical batch from `FUTURE_WORK.md` while preserving all
 existing dashboard, options, manual-trade, jobs, and watchlist behavior.
+
+## Completed (2026-06-04 Semiconductor/storage ticker expansion)
+
+- Added requested active semiconductor/storage names to `config/watchlist.yml`:
+  - `ARM` / Arm Holdings plc
+  - `STX` / Seagate Technology Holdings plc
+- Both names have `options` strategy tags, so scheduled jobs, manual refresh,
+  market/news/social/SEC/options data pulls, prediction scans, Options Edge,
+  Trade Summary, Trade Strategy, and all ticker-driven tabs include them after
+  the next scan.
+- Updated `config/policy_theme_watchlists.yml` so Theme Watchlists includes
+  `ARM` as chip-IP / edge-AI semiconductor context and `STX` as AI-storage /
+  data-center storage context.
+
+## Completed (2026-06-04 Requested ticker expansion)
+
+- Added requested active scan tickers to `config/watchlist.yml`:
+  - `QCOM` / QUALCOMM Incorporated
+  - `APP` / AppLovin Corporation
+  - `IONQ` / IonQ, Inc.
+- Confirmed these requested names were already active: `AMD`, `SMCI`, `RKLB`,
+  and `ISRG`.
+- All seven requested tickers now have `options` strategy tags, so scheduled
+  jobs, manual refresh, market/news/social/SEC/options data pulls, prediction
+  scans, Options Edge, Trade Summary, Trade Strategy, and all ticker-driven tabs
+  include them after the next scan.
+- Updated `config/policy_theme_watchlists.yml` so Theme Watchlists also includes
+  `QCOM`, `APP`, and `IONQ` as focused AI/quantum/software context.
+- Updated the Theme Watchlists renderer to show the additional focused AI /
+  quantum / software target section, not just the Trump-policy and priority
+  AI hardware baskets.
+- Validation: watchlist loader returned 44 active symbols at that step and reported all
+  requested tickers as found.
 
 ## Completed (2026-06-04 Trade Summary lower-premium grouping)
 

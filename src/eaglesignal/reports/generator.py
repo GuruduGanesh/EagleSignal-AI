@@ -87,6 +87,12 @@ def _theme_tables(result: RunResult | None = None) -> str:
             f"<tr><td>{i}</td><td>{item.get('ticker')}</td><td>{item.get('company')}</td>"
             f"<td>{', '.join(item.get('themes', []))}</td>{live_cols(item.get('ticker'))}</tr>"
         )
+    additional_rows = ""
+    for i, item in enumerate(data.get("additional_focused_ai_context", {}).get("public_active_targets", []), 1):
+        additional_rows += (
+            f"<tr><td>{i}</td><td>{item.get('ticker')}</td><td>{item.get('company')}</td>"
+            f"<td>{', '.join(item.get('themes', []))}</td>{live_cols(item.get('ticker'))}</tr>"
+        )
     return (
         "<section class='panel' style='background:#f0f6ff'><h3>How To Read Theme Watchlists</h3>"
         "<p>These baskets are context lists, not automatic buys. Only symbols present in "
@@ -101,10 +107,14 @@ def _theme_tables(result: RunResult | None = None) -> str:
         "<table><thead><tr><th>Ticker</th><th>Company</th><th>Theme</th><th>Why</th>"
         "<th>Live verdict</th><th>Research action</th><th>Opp/Conf/Risk</th><th>P(up)</th><th>Trend</th></tr></thead>"
         f"<tbody>{trump_rows}</tbody></table></section>"
-        "<section class='panel'><h3>Top 15 AI / GPU / Storage / Chips / Robots / Space</h3>"
+        "<section class='panel'><h3>Priority AI / GPU / Storage / Chips / Robots / Space</h3>"
         "<table><thead><tr><th>#</th><th>Ticker</th><th>Company</th><th>Themes</th>"
         "<th>Live verdict</th><th>Research action</th><th>Opp/Conf/Risk</th><th>P(up)</th><th>Trend</th></tr></thead>"
         f"<tbody>{top_rows}</tbody></table></section>"
+        "<section class='panel'><h3>Additional Focused AI / Quantum / Software Targets</h3>"
+        "<table><thead><tr><th>#</th><th>Ticker</th><th>Company</th><th>Themes</th>"
+        "<th>Live verdict</th><th>Research action</th><th>Opp/Conf/Risk</th><th>P(up)</th><th>Trend</th></tr></thead>"
+        f"<tbody>{additional_rows}</tbody></table></section>"
     )
 
 

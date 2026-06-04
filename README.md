@@ -55,7 +55,7 @@ Most stock projects focus only on price, technical indicators, or financial rati
 - Sector rotation and institutional flow proxies
 - Trump administration / White House / Federal Register / tariff / export-control / defense / AI infrastructure policy monitoring
 - Theme baskets for Trump-policy-adjacent public names and top AI/GPU/storage/chips/robotics/space stocks
-- Focused default universe from the current niche screen plus top niche options names: SPY/QQQ as market context plus MU, AMD, AVGO, NVDA, INTC, AAPL, META, GOOGL, AMZN, TSM, ASML, LRCX, SMCI, DELL, HPE, WDC, AMAT, OKLO, PLTR, ISRG, RKLB, SNDK, MRVL, and QBTS. Groq is tracked as private AI-inference context only because it has no public stock ticker or listed options chain.
+- Focused default universe from the current niche screen plus top niche options names: SPY/QQQ as market context plus MU, AMD, AVGO, QCOM, ARM, NVDA, INTC, AAPL, META, GOOGL, AMZN, TSM, ASML, LRCX, SMCI, DELL, HPE, WDC, STX, AMAT, OKLO, PLTR, APP, ISRG, RKLB, SNDK, MRVL, QBTS, and IONQ. Groq is tracked as private AI-inference context only because it has no public stock ticker or listed options chain.
 - Manual paper-trade journal for user-entered trade price, quantity, current mark, P/L, and notes
 - Bullish and bearish final verdicts for long, short/put, watch-only, or avoid research
 - SNDK-style event radar for abnormal price acceleration, volume expansion, catalyst density, and exhaustion/reversal risk

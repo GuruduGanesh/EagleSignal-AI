@@ -32,6 +32,20 @@ assets:
     sector: Technology
     industry: Semiconductors
     strategy_tags: [focused_watchlist, ai_accelerators, networking, semiconductors, options]
+  - ticker: QCOM
+    asset_type: equity
+    company_name: QUALCOMM Incorporated
+    exchange: NASDAQ
+    sector: Technology
+    industry: Semiconductors
+    strategy_tags: [focused_watchlist, ai_edge, mobile_ai, automotive_chips, semiconductors, options]
+  - ticker: ARM
+    asset_type: equity
+    company_name: Arm Holdings plc
+    exchange: NASDAQ
+    sector: Technology
+    industry: Semiconductors
+    strategy_tags: [focused_watchlist, ai_edge, chip_ip, mobile_ai, data_center, semiconductors, options]
   - ticker: NVDA
     asset_type: equity
     company_name: NVIDIA Corporation
@@ -123,6 +137,13 @@ assets:
     sector: Technology
     industry: Computer Hardware
     strategy_tags: [focused_watchlist, storage, nand, ai_storage, options]
+  - ticker: STX
+    asset_type: equity
+    company_name: Seagate Technology Holdings plc
+    exchange: NASDAQ
+    sector: Technology
+    industry: Computer Hardware
+    strategy_tags: [focused_watchlist, storage, hard_drives, ai_storage, data_center, options]
   - ticker: AMAT
     asset_type: equity
     company_name: Applied Materials, Inc.
@@ -144,6 +165,13 @@ assets:
     sector: Technology
     industry: Software Infrastructure
     strategy_tags: [focused_watchlist, ai, defense_ai, government_software, trump_admin_policy, options]
+  - ticker: APP
+    asset_type: equity
+    company_name: AppLovin Corporation
+    exchange: NASDAQ
+    sector: Technology
+    industry: Software - Application
+    strategy_tags: [focused_watchlist, ai_adtech, mobile_apps, high_beta, event_driven, options]
   - ticker: ISRG
     asset_type: equity
     company_name: Intuitive Surgical, Inc.
@@ -175,6 +203,13 @@ assets:
   - ticker: QBTS
     asset_type: equity
     company_name: D-Wave Quantum Inc.
+    exchange: NYSE
+    sector: Technology
+    industry: Computer Hardware
+    strategy_tags: [focused_watchlist, quantum_computing, ai_compute, high_beta, event_driven, options]
+  - ticker: IONQ
+    asset_type: equity
+    company_name: IonQ, Inc.
     exchange: NYSE
     sector: Technology
     industry: Computer Hardware

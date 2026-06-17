@@ -25,15 +25,18 @@ class EvidenceStore:
         self,
         *,
         entity: str,
-        source_name: str,
-        source_type: str,
-        claim: str,
+        source_name: Optional[str],
+        source_type: Optional[str],
+        claim: Optional[str],
         url: Optional[str] = None,
         published_at: Optional[datetime] = None,
         raw_excerpt: str = "",
         polarity: float = 0.0,
         data_type: str = "news",
     ) -> Evidence:
+        source_name = str(source_name or "unknown_source")
+        source_type = str(source_type or "unknown")
+        claim = str(claim or "")
         fresh, _age = freshness_score(published_at, data_type)
         h = hashlib.sha1(
             f"{entity}|{source_name}|{claim}|{url}".encode("utf-8")

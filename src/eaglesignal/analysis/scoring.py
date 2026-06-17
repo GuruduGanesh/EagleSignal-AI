@@ -81,19 +81,51 @@ def conviction(opportunity: Optional[float]) -> float:
     return max(0.0, min(1.0, (dist - 4.0) / 18.0))
 
 
+def directional_alignment(components: list[SignalComponent], opportunity: float) -> float:
+    """Fraction (0..1) of weighted evidence that does NOT oppose the call's side.
+
+    This is the honest driver of confidence: a setup where the factors that *have
+    data* lean the same way (or stay neutral) is trustworthy, even if they measure
+    different dimensions and therefore differ in magnitude. We only subtract credit
+    for components that actively point the OTHER way — not for benign, orthogonal
+    spread between factors (the flaw that capped the old evidence-quality term)."""
+    avail = [c for c in components if c.available]
+    if not avail:
+        return 0.5
+    bullish = opportunity >= 50.0
+    support = 0.0
+    total = 0.0
+    for c in avail:
+        w = c.weight if c.weight > 0 else 1.0
+        total += w
+        lean = c.score - 50.0  # >0 bullish, <0 bearish
+        # 0 when fully aligned/neutral, 1 when ~25pts against the call's side.
+        against = (-lean) if bullish else lean
+        opp_frac = max(0.0, min(1.0, against / 25.0))
+        support += w * (1.0 - opp_frac)
+    return support / total if total else 0.5
+
+
 def confidence_score(components: list[SignalComponent], opportunity: Optional[float] = None) -> float:
     """User-facing confidence (0..100): conviction in an ACTIONABLE buy/sell call.
 
-    confidence = evidence_quality * (0.15 + 0.85 * directional_conviction)
+    confidence = (0.45*coverage + 0.55*directional_alignment) * (0.20 + 0.80*conviction)
 
     A neutral setup (opportunity ~50) has ~zero conviction, so its confidence is
-    intentionally low — "no edge to trade". High confidence is only possible for
-    a clear bullish (buy) or bearish (sell/short) lean backed by good, agreeing
-    data. When ``opportunity`` is omitted this collapses to pure evidence quality
-    (used by tests that only compare agreement)."""
-    dq = evidence_quality(components) / 100.0
+    intentionally low — "no edge to trade". High confidence requires a clear
+    directional lean (conviction) backed by broad coverage AND factors that agree
+    on the *direction* (alignment). Confidence is then capped by the engine's
+    factor-coverage ceiling so it can never exceed what the available real data
+    supports. When ``opportunity`` is omitted this collapses to evidence quality
+    (used by tests/callers that only compare agreement)."""
+    if opportunity is None:
+        return round(evidence_quality(components), 1)
+    avail = [c for c in components if c.available]
+    coverage = len(avail) / max(1, len(components))
+    align = directional_alignment(components, opportunity)
     conv = conviction(opportunity)
-    return round(100.0 * dq * (0.15 + 0.85 * conv), 1)
+    base = 100.0 * (0.45 * coverage + 0.55 * align)
+    return round(base * (0.20 + 0.80 * conv), 1)
 
 
 def to_direction(score: float) -> Direction:

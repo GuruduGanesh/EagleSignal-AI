@@ -150,8 +150,23 @@ class PredictionResult(BaseModel):
     options_trade_idea: dict[str, Any] = Field(default_factory=dict)
     trend_impact: dict[str, Any] = Field(default_factory=dict)
     event_radar: dict[str, Any] = Field(default_factory=dict)
+    economic_event_impact: dict[str, Any] = Field(default_factory=dict)
     final_verdict: dict[str, Any] = Field(default_factory=dict)
     confidence_trace: dict[str, Any] = Field(default_factory=dict)
+    market_regime: dict[str, Any] = Field(default_factory=dict)  # shared risk-on/off tape
+    stock_market_engine: dict[str, Any] = Field(default_factory=dict)  # macro/geo/calendar market read
+    factor_coverage: dict[str, Any] = Field(default_factory=dict)  # 23-group checklist audit
+
+    # --- strict expected-move / reward-risk candidate gate (single source of truth) ---
+    candidate_gate: dict[str, Any] = Field(default_factory=dict)
+    target_price: Optional[float] = None
+    stop_price: Optional[float] = None
+    expected_points: Optional[float] = None
+    expected_percent: Optional[float] = None
+    final_required_points: Optional[float] = None
+    reward_risk_ratio: Optional[float] = None
+    validation_status: str = "NO_TRADE"
+    rejected_reason: Optional[str] = None
     global_correlations: dict[str, float] = Field(default_factory=dict)  # index -> rolling corr
 
     key_bullish_evidence: list[str] = Field(default_factory=list)

@@ -804,6 +804,18 @@ def analyze_expiries(chain: OptionsChain, signal: dict, top_n: int = 3) -> list[
     algo_factor = max(0.0, min(1.0, float(signal.get("algo_confluence", 0.0) or 0.0) / 5.0))
     risk_score = float(signal.get("risk_score", 50.0) or 50.0)
     min_dte = int(signal.get("min_days_to_expiry", 5) or 5)
+    is_index_option = bool(signal.get("is_index_option"))
+    min_index_move = float(signal.get("min_index_option_move_points") or 0.0)
+    expected_points = signal.get("expected_points")
+    try:
+        expected_points = abs(float(expected_points)) if expected_points is not None else None
+    except Exception:
+        expected_points = None
+    index_move_gate_fails = (
+        is_index_option
+        and min_index_move > 0
+        and (expected_points is None or expected_points < min_index_move)
+    )
     option_history = signal.get("option_history") or {}
     term_by_expiry = _term_structure_by_expiry(chain.chains, min_dte)
     realized_vol_20d = signal.get("realized_vol_20d")
@@ -819,8 +831,12 @@ def analyze_expiries(chain: OptionsChain, signal: dict, top_n: int = 3) -> list[
     except Exception:
         days_to_earnings = None
     spot = chain.spot
-    bullish = direction == "up"
-    bearish = direction == "down"
+    signal_direction = direction if direction in ("up", "down") else "neutral"
+    bullish = signal_direction == "up"
+    bearish = signal_direction == "down"
+    if index_move_gate_fails:
+        bullish = False
+        bearish = False
 
     ideas: list[ExpiryIdea] = []
     for ec in chain.chains:
@@ -831,6 +847,74 @@ def analyze_expiries(chain: OptionsChain, signal: dict, top_n: int = 3) -> list[
         avg_iv = m["avg_iv"]
         pcr = m["put_call_ratio"]
         reasons: list[str] = []
+        call_liq = int(m.get("atm_call_volume") or 0) + int(m.get("atm_call_oi") or 0)
+        put_liq = int(m.get("atm_put_volume") or 0) + int(m.get("atm_put_oi") or 0)
+
+        def _watch_reference(preferred: str) -> tuple[str | None, float | None, float | None, float | None, str | None, int | None, int | None, float | None]:
+            call_price = m.get("atm_call_last")
+            put_price = m.get("atm_put_last")
+            prefer_call = preferred == "up"
+            prefer_put = preferred == "down"
+            if prefer_call and m.get("atm_call_symbol"):
+                return (
+                    m.get("atm_call_symbol"),
+                    call_price,
+                    m.get("atm_call_bid"),
+                    m.get("atm_call_ask"),
+                    "call",
+                    m.get("atm_call_volume"),
+                    m.get("atm_call_oi"),
+                    m.get("atm_call_iv") or avg_iv,
+                )
+            if prefer_put and m.get("atm_put_symbol"):
+                return (
+                    m.get("atm_put_symbol"),
+                    put_price,
+                    m.get("atm_put_bid"),
+                    m.get("atm_put_ask"),
+                    "put",
+                    m.get("atm_put_volume"),
+                    m.get("atm_put_oi"),
+                    m.get("atm_put_iv") or avg_iv,
+                )
+            call_tuple = (
+                m.get("atm_call_symbol"),
+                call_price,
+                m.get("atm_call_bid"),
+                m.get("atm_call_ask"),
+                "call",
+                m.get("atm_call_volume"),
+                m.get("atm_call_oi"),
+                m.get("atm_call_iv") or avg_iv,
+            )
+            put_tuple = (
+                m.get("atm_put_symbol"),
+                put_price,
+                m.get("atm_put_bid"),
+                m.get("atm_put_ask"),
+                "put",
+                m.get("atm_put_volume"),
+                m.get("atm_put_oi"),
+                m.get("atm_put_iv") or avg_iv,
+            )
+            if call_tuple[0] and not put_tuple[0]:
+                return call_tuple
+            if put_tuple[0] and not call_tuple[0]:
+                return put_tuple
+            if call_tuple[0] and put_tuple[0]:
+                call_cost = float(call_tuple[1] or 10**9)
+                put_cost = float(put_tuple[1] or 10**9)
+                if call_cost != put_cost:
+                    return call_tuple if call_cost < put_cost else put_tuple
+                return call_tuple if call_liq >= put_liq else put_tuple
+            return (None, None, None, None, None, None, None, None)
+
+        if index_move_gate_fails:
+            points_txt = "unknown" if expected_points is None else f"{expected_points:.1f}"
+            reasons.append(
+                f"Index-options gate: expected move {points_txt} point(s) is below the "
+                f"{min_index_move:.0f}-point minimum for long/short index option trades"
+            )
 
         # Base directional confidence from the shared analysis.
         base = conviction * 100.0
@@ -883,17 +967,18 @@ def analyze_expiries(chain: OptionsChain, signal: dict, top_n: int = 3) -> list[
             ref_exact_oi = m["atm_put_oi"]
             ref_iv = m["atm_put_iv"] or avg_iv
         else:
-            action, ddir, arrow, action_color = "NO TRADE", "neutral", "→", "orange"
-            ref = None
-            ref_price = None
-            ref_bid = None
-            ref_ask = None
-            ref_type = None
-            ref_exact_vol = None
-            ref_exact_oi = None
-            ref_iv = None
+            action, action_color = "NO TRADE", "orange"
+            if signal_direction == "up":
+                ddir, arrow = "up", "▲"
+                reasons.insert(0, "bullish lean is below the action threshold — watch only, not a live long call")
+            elif signal_direction == "down":
+                ddir, arrow = "down", "▼"
+                reasons.insert(0, "bearish lean is below the action threshold — watch only, not a live long put")
+            else:
+                ddir, arrow = "neutral", "→"
+                reasons.insert(0, "underlying is neutral — no directional options edge")
+            ref, ref_price, ref_bid, ref_ask, ref_type, ref_exact_vol, ref_exact_oi, ref_iv = _watch_reference(signal_direction)
             confidence = round(min(confidence, 25.0), 1)
-            reasons.insert(0, "underlying is neutral — no directional options edge")
 
         prev_row = option_history.get(str(ref or "").upper()) if ref else None
         previous_exact_oi = None

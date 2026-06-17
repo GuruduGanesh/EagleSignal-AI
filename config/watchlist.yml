@@ -11,6 +11,46 @@ assets:
     company_name: Invesco QQQ Trust
     exchange: NASDAQ
     strategy_tags: [index, nasdaq_100, technology, market_regime, context_only]
+  - ticker: SPX
+    asset_type: index
+    company_name: Cboe S&P 500 Index
+    exchange: CBOE
+    strategy_tags: [index_options, cash_settled, s_and_p_500, market_regime, options]
+  - ticker: XSP
+    asset_type: index
+    company_name: Mini S&P 500 Index
+    exchange: CBOE
+    strategy_tags: [index_options, mini_index, cash_settled, s_and_p_500, market_regime, options]
+  - ticker: NDX
+    asset_type: index
+    company_name: Nasdaq-100 Index
+    exchange: CBOE
+    strategy_tags: [index_options, cash_settled, nasdaq_100, technology, market_regime, options]
+  - ticker: XND
+    asset_type: index
+    company_name: Mini Nasdaq-100 Index
+    exchange: CBOE
+    strategy_tags: [index_options, mini_index, cash_settled, nasdaq_100, technology, market_regime, options]
+  - ticker: RUT
+    asset_type: index
+    company_name: Russell 2000 Index
+    exchange: CBOE
+    strategy_tags: [index_options, cash_settled, small_caps, market_regime, options]
+  - ticker: VIX
+    asset_type: index
+    company_name: Cboe Volatility Index
+    exchange: CBOE
+    strategy_tags: [index_options, volatility, market_regime, risk, options]
+  - ticker: DJX
+    asset_type: index
+    company_name: Dow Jones Industrial Average Index
+    exchange: CBOE
+    strategy_tags: [index_options, cash_settled, dow_jones, market_regime, options]
+  - ticker: OEX
+    asset_type: index
+    company_name: S&P 100 Index
+    exchange: CBOE
+    strategy_tags: [index_options, cash_settled, large_caps, market_regime, options]
   - ticker: MU
     asset_type: equity
     company_name: Micron Technology, Inc.
@@ -321,6 +361,32 @@ assets:
     sector: Technology
     industry: Software Infrastructure
     strategy_tags: [trump_admin_policy, ai_cloud_government, hyperscaler, options]
+  # --- Index/macro ETF proxies for the Index Options Strategies focus ---
+  - ticker: IWM
+    asset_type: etf
+    company_name: iShares Russell 2000 ETF
+    exchange: NYSEARCA
+    strategy_tags: [index, russell_2000, small_caps, index_proxy, market_regime, options]
+  - ticker: DIA
+    asset_type: etf
+    company_name: SPDR Dow Jones Industrial Average ETF
+    exchange: NYSEARCA
+    strategy_tags: [index, dow_jones, index_proxy, market_regime, options]
+  - ticker: GLD
+    asset_type: etf
+    company_name: SPDR Gold Shares
+    exchange: NYSEARCA
+    strategy_tags: [commodity, gold, safe_haven, macro, options]
+  - ticker: USO
+    asset_type: etf
+    company_name: United States Oil Fund
+    exchange: NYSEARCA
+    strategy_tags: [commodity, oil, energy, geopolitical, macro, options]
+  - ticker: TLT
+    asset_type: etf
+    company_name: iShares 20+ Year Treasury Bond ETF
+    exchange: NASDAQ
+    strategy_tags: [bonds, rates, macro, safe_haven, options]
 
 strategies:
   default_horizons: [intraday, 1D, 5D, 20D]

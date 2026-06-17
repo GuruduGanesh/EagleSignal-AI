@@ -16,6 +16,8 @@ from pathlib import Path
 import yaml
 
 from .. import __disclaimer__, __product__
+from ..analysis.index_options import is_index_option_ticker
+from ..analysis.index_strategies import build_index_strategies
 from ..config import get_settings
 from ..pipeline import RunResult
 from ..schemas import PredictionResult
@@ -100,7 +102,7 @@ def _theme_tables(result: RunResult | None = None) -> str:
         "<ul style='margin:6px 0 0;font-size:13px'>"
         "<li><b>Opp/Conf/Risk</b> = opportunity / confidence / risk. Opportunity above 50 leans bullish, below 50 leans bearish. Confidence is conviction in a buy/sell call, so neutral names stay low on purpose. Risk is danger: higher means less tradeable.</li>"
         "<li><b>P(up)</b> = the ensemble forecast probability that the underlying price is higher at the selected horizon, simulated from real historical returns and trend agents. It is a probability-style model input, not a guarantee.</li>"
-        "<li><b>Trend</b> merges today's price move, news volume/provider coverage, evidence tone, social signal, forecast tilt, and policy/Trump-admin links when present.</li>"
+        "<li><b>Trend</b> merges today's price move, news volume/provider coverage, evidence tone, social signal, forecast tilt, policy/Trump-admin links, and scheduled economic-event risk when present.</li>"
         "</ul></section>"
         "<section class='panel'><h3>Trump/Admin Policy Basket</h3>"
         "<p>Context list only. Add tickers to config/watchlist.yml when you want active scoring.</p>"
@@ -137,6 +139,93 @@ def _move_class(value: object) -> str:
     return "neutral"
 
 
+def _economic_event_impact(p: PredictionResult) -> dict:
+    return (
+        getattr(p, "economic_event_impact", None)
+        or (p.trend_impact or {}).get("economic_event_impact")
+        or (p.confidence_trace or {}).get("economic_event_impact")
+        or {}
+    )
+
+
+def _economic_event_cell(p: PredictionResult) -> str:
+    impact = _economic_event_impact(p)
+    count = int(impact.get("event_count") or 0)
+    if not count:
+        return "<span class='neutral'>quiet</span>"
+    level = str(impact.get("risk_level") or "watch")
+    color = {
+        "extreme": "#dc2626",
+        "high": "#dc2626",
+        "medium": "#f59e0b",
+        "low": "#6b7280",
+        "quiet": "#6b7280",
+    }.get(level, "#6b7280")
+    high = int(impact.get("high_impact_count") or 0)
+    summary = str(impact.get("summary") or "")
+    action = str(impact.get("action") or "")
+    return (
+        f"<span style='color:{color};font-weight:700' title='{_attr(summary)}'>"
+        f"{level} · {count} event(s) · {high} high</span><br> "
+        f"<small>{action.replace('_', ' ')}</small>"
+    )
+
+
+def _economic_event_html(p: PredictionResult) -> str:
+    impact = _economic_event_impact(p)
+    if not impact:
+        return ""
+    events = impact.get("events") or []
+    items = ""
+    for ev in events[:6]:
+        items += (
+            f"<li><b>{ev.get('date')}</b> · {ev.get('title')} "
+            f"({ev.get('impact')}, {ev.get('days_away')}d) — "
+            f"{ev.get('channel')}; {ev.get('trade_effect')} "
+            f"<small>Typical time: {ev.get('typical_release_time', 'varies')}. Source: {ev.get('source', 'calendar')}.</small></li>"
+        )
+    if not items:
+        items = "<li>No scheduled economic/company event inside this signal horizon.</li>"
+    return (
+        "<h4>Economic event impact</h4>"
+        f"<p><b>{impact.get('risk_level', 'quiet').upper()}</b> · "
+        f"{impact.get('summary', '')}<br>"
+        f"<small>Action: {str(impact.get('action', 'normal_process')).replace('_', ' ')}. "
+        f"{impact.get('confidence_policy', '')}</small></p>"
+        f"<ul>{items}</ul>"
+    )
+
+
+def _stock_market_engine_html(p: PredictionResult) -> str:
+    engine = (
+        getattr(p, "stock_market_engine", None)
+        or (p.trend_impact or {}).get("stock_market_engine")
+        or (p.confidence_trace or {}).get("stock_market_engine")
+        or {}
+    )
+    if not engine:
+        return ""
+    drivers = []
+    for key, label in (
+        ("bearish_drivers", "Bearish"),
+        ("bullish_drivers", "Bullish"),
+        ("risk_drivers", "Risk"),
+    ):
+        for item in engine.get(key, [])[:3]:
+            drivers.append(f"<li><b>{label}:</b> {html.escape(str(item))}</li>")
+    if not drivers:
+        drivers.append("<li>No dominant broad-market driver was strong enough to list.</li>")
+    return (
+        "<h4>Stock-market prediction engine</h4>"
+        f"<p><b>{str(engine.get('direction', 'neutral')).replace('_', ' ').upper()}</b> · "
+        f"score {engine.get('score', 'n/a')}/100 · "
+        f"{html.escape(str(engine.get('summary', '')))}<br>"
+        f"<small>Includes VIX, oil, dollar, global correlation, government/policy/geopolitical clues, "
+        f"calendar events, and market-wide news providers: {', '.join(engine.get('news_providers', []) or ['n/a'])}.</small></p>"
+        f"<ul>{''.join(drivers)}</ul>"
+    )
+
+
 def _signal_side(direction: str, action: str) -> str:
     txt = f"{direction} {action}".lower()
     if "bearish" in txt or "short" in txt or "put" in txt or "sell" in txt:
@@ -168,6 +257,8 @@ def _forecast_for_strategy(p: PredictionResult, side: str) -> tuple[int, float |
 
     The dashboard is short-term/options-first, so the 3D forecast drives the
     strategy tab when available. We fall back to the canonical 5D forecast.
+    The returned ``days`` is the forecast's own horizon — :func:`_target_days`
+    refines it into a per-ticker, data-driven number for display.
     """
     f3 = (p.short_horizon_forecasts or {}).get("3D")
     f = f3 if f3 and f3.available else p.forecast
@@ -185,7 +276,50 @@ def _forecast_for_strategy(p: PredictionResult, side: str) -> tuple[int, float |
     return (days, ret, prob_side, p05)
 
 
-MAX_STRATEGY_OPTION_PRICE = 50.0
+def _daily_move_pct(p: PredictionResult) -> float | None:
+    """Typical 1-day move (%) from the options/ATR expected move, used to estimate
+    how many sessions a target should take. Falls back to a 20D-vol derived value."""
+    em = p.expected_move
+    if em is not None and em.high_pct is not None and em.low_pct is not None:
+        span = (abs(float(em.high_pct)) + abs(float(em.low_pct))) / 2.0
+        # expected_move is a horizon (~5D) 1σ band; de-annualize to ~1 day.
+        if span > 0:
+            return max(0.3, span / (5 ** 0.5))
+    rv = _safe_float((p.confidence_trace or {}).get("realized_vol_20d"))
+    if rv:
+        return max(0.3, rv / (252 ** 0.5))
+    return None
+
+
+def _target_days(p: PredictionResult, expected_ret: float | None, best_ex: dict | None,
+                 forecast_days: int) -> int:
+    """Per-ticker, data-driven target horizon (the old code showed a constant 3).
+
+    * Option-qualified plan → the chosen contract's DTE (the real trade horizon).
+    * Stock plan → sessions for the underlying to travel ``expected_ret`` at its
+      typical daily move, clamped to a sensible [1, 20] window.
+    """
+    if best_ex:
+        dte = _safe_float(best_ex.get("days_to_expiry"))
+        if dte is not None and dte >= 1:
+            return int(round(min(dte, 45)))
+    base = int(max(1, forecast_days))
+    if expected_ret is not None:
+        daily = _daily_move_pct(p)
+        if daily and daily > 0:
+            est = round(abs(float(expected_ret)) / daily)
+            # Tiny/neutral expected move ⇒ fall back to the model's forecast horizon
+            # instead of collapsing to 1 day (which is uninformative).
+            if est >= 1:
+                return int(min(20, est))
+    return base
+
+
+MAX_STRATEGY_OPTION_PRICE = 35.0
+
+
+def _is_index_option_prediction(p: PredictionResult) -> bool:
+    return is_index_option_ticker(getattr(p, "ticker", None)) or str(getattr(p, "asset_type", "")).endswith("index")
 
 
 def _strategy_expiry_rank(ex: dict) -> tuple[float, float, float, float]:
@@ -215,6 +349,8 @@ def _tradeable_strategy_expiries(
     promote only quoted contracts that satisfy the user's tradeability guardrails:
     DTE >= min_dte, action present, and premium <= max_price.
     """
+    if not _is_index_option_prediction(p):
+        return []
     expiries = []
     for ex in (p.options_trade_idea or {}).get("top_expiries", []):
         price = _safe_float(ex.get("reference_option_price"))
@@ -263,23 +399,45 @@ def _strategy_sort_key(p: PredictionResult, min_dte: int) -> tuple[float, float,
     return (score, p.confidence_score, liquidity, -p.risk_score)
 
 
-def _strategy_summary_row(p: PredictionResult, min_dte: int) -> str:
+def _strategy_summary_row(p: PredictionResult, min_dte: int, min_profit_pct: float = 5.0) -> str:
     snap = p.market_snapshot or {}
     current = _safe_float(snap.get("current_price"))
-    expiries = _tradeable_strategy_expiries(p, min_dte, limit=3)
-    best_ex = expiries[0] if expiries else {}
+    underlying_volume = snap.get("last_volume")
+    raw_expiries = _tradeable_strategy_expiries(p, min_dte, limit=3)
+    best_ex = {}
     final = p.final_verdict or {}
-    action = best_ex.get("action") or final.get("research_action", "watch_only")
+    action = final.get("research_action", "watch_only")
     side = _signal_side(p.direction.value, str(action))
-    days, expected_ret, prob_side, p05 = _forecast_for_strategy(p, side)
-    target = current * (1 + expected_ret / 100) if current is not None and expected_ret is not None else None
-    downside = abs(p05 or 0) / 100 * 0.75 if p05 is not None else 0.045
-    stop_pct = min(max(downside, 0.035), 0.095)
-    stop = None
-    if current is not None:
-        stop = current * (1 + stop_pct) if side == "short" else current * (1 - stop_pct)
+    fdays, expected_ret, prob_side, p05 = _forecast_for_strategy(p, side)
+    # Authoritative target from the engine candidate gate (single source of truth).
+    target = p.target_price if p.target_price is not None else (
+        current * (1 + expected_ret / 100) if current is not None and expected_ret is not None else None)
+    expiries = []
+    for candidate in raw_expiries:
+        opt_price_for_filter = _safe_float(candidate.get("reference_option_price"))
+        delta_for_filter = _safe_float(candidate.get("delta"))
+        if opt_price_for_filter is not None and delta_for_filter is not None and current is not None and target is not None:
+            opt_exit_for_filter = opt_price_for_filter + abs(delta_for_filter) * abs(target - current)
+        elif opt_price_for_filter is not None:
+            opt_exit_for_filter = opt_price_for_filter * 1.25
+        else:
+            opt_exit_for_filter = None
+        if _profit_ok(_profit_potential(opt_price_for_filter, opt_exit_for_filter, candidate.get("contract_multiplier") or 100), min_profit_pct):
+            expiries.append(candidate)
+    best_ex = expiries[0] if expiries else {}
+    if best_ex:
+        action = best_ex.get("action") or action
+        side = _signal_side(p.direction.value, str(action))
+    days = _target_days(p, expected_ret, best_ex, fdays)
+    stop = p.stop_price
+    if stop is None and current is not None:
+        downside = abs(p05 or 0) / 100 * 0.75 if p05 is not None else 0.045
+        sp = min(max(downside, 0.035), 0.095)
+        stop = current * (1 + sp) if side == "short" else current * (1 - sp)
+    stop_pct = abs(current - stop) / current if (current and stop is not None) else 0.05
 
     side_color = "#16a34a" if side == "long" else "#dc2626" if side == "short" else "#6b7280"
+    verdict_label, verdict_color, verdict_tip = _bull_bear(p, side)
     rank = _strategy_sort_key(p, min_dte)[0]
     prob_txt = f"{prob_side:.1f}%" if prob_side is not None else "n/a"
     expected_txt = f"{expected_ret:+.2f}%" if expected_ret is not None else "n/a"
@@ -292,26 +450,47 @@ def _strategy_summary_row(p: PredictionResult, min_dte: int) -> str:
     if best_ex.get("iv_risk"):
         why.append(str(best_ex.get("iv_risk")))
     why_txt = "; ".join(why[:3]) or "No strong summary reason captured."
+    index_option_row = _is_index_option_prediction(p)
     option_details = (
         f"<button type='button' class='summary-toggle' data-summary-group='{p.ticker}' "
         f"aria-expanded='false'>+ {len(expiries)} tradeable expiries</button><br>"
-        f"<small>DTE ≥ {min_dte}, premium ≤ ${MAX_STRATEGY_OPTION_PRICE:.0f}, sorted best first.</small>"
+        f"<small>DTE ≥ {min_dte}, premium ≤ ${MAX_STRATEGY_OPTION_PRICE:.0f}, profit ≥ {min_profit_pct:.0f}%, sorted best first.</small>"
         if expiries else
-        f"Stock only — no qualifying option ≤ ${MAX_STRATEGY_OPTION_PRICE:.0f} with DTE ≥ {min_dte}."
+        (
+            f"Index level only — no qualifying index option ≤ ${MAX_STRATEGY_OPTION_PRICE:.0f} "
+            f"with DTE ≥ {min_dte}, 50+ point expected move, and profit ≥ {min_profit_pct:.0f}%."
+            if index_option_row else
+            f"Stock only — stock option trades are disabled; use index options for option trades."
+        )
     )
+
+    best_opt_price = _safe_float(best_ex.get("reference_option_price")) if best_ex else None
+    best_delta = _safe_float(best_ex.get("delta")) if best_ex else None
+    best_opt_exit = None
+    if best_opt_price is not None and best_delta is not None and current is not None and target is not None:
+        best_opt_exit = best_opt_price + abs(best_delta) * abs(target - current)
+    elif best_opt_price is not None:
+        best_opt_exit = best_opt_price * 1.25
+    best_mult = (best_ex.get("contract_multiplier") or 100) if best_ex else 100
+    parent_pp = _profit_potential(best_opt_price, best_opt_exit, best_mult)
+    vol_txt = f"{int(underlying_volume):,}" if underlying_volume not in (None, "") else "—"
 
     parent = (
         f"<tr id='trade_summary-{p.ticker}' class='summary-parent strategy-row' data-summary-group='{p.ticker}' data-side='{side}' "
         f"data-er='{_attr(expected_ret if expected_ret is not None else '')}' "
-        f"data-stop-pct='{stop_pct:.5f}' data-delta='' data-option-entry=''>"
+        f"data-stop-pct='{stop_pct:.5f}' data-delta='{_attr(best_delta if best_delta is not None else '')}' "
+        f"data-option-entry='{_attr(best_opt_price if best_opt_price is not None else '')}' "
+        f"data-multiplier='{_attr(best_mult)}'>"
         f"<td><b>{p.ticker}</b><br><small>rank {rank:.1f}</small></td>"
         f"<td style='color:{side_color};font-weight:800'>{side}</td>"
-        f"<td>{'stock + options' if expiries else 'stock'}</td>"
+        f"<td style='color:{verdict_color};font-weight:800' title='{_attr(verdict_tip)}'>{verdict_label}</td>"
+        f"<td>{'index + options' if expiries and index_option_row else 'stock' if not index_option_row else 'index'}</td>"
         f"<td>{p.opportunity_score:.0f}/{p.confidence_score:.0f}/{p.risk_score:.0f}<br>"
         f"<small>{prob_txt} · {expected_txt}</small></td>"
         f"<td class='px strategy-current' data-role='current' data-tk='{p.ticker}'>{_fmt_money(current)}</td>"
         f"<td data-role='target'>{_fmt_money(target)}</td><td>{days}</td>"
         f"<td data-role='stop'>{_fmt_money(stop)}</td><td data-role='exit'>{_fmt_money(target)}</td>"
+        f"<td>{vol_txt}</td>{_potential_cell(parent_pp, min_profit_pct)}"
         f"<td>{option_details}</td><td>{why_txt}</td><td>—</td></tr>"
     )
 
@@ -333,6 +512,8 @@ def _strategy_summary_row(p: PredictionResult, min_dte: int) -> str:
         child_action = ex.get("action") or action
         child_side = _signal_side(p.direction.value, str(child_action))
         child_side_color = "#16a34a" if child_side == "long" else "#dc2626" if child_side == "short" else "#6b7280"
+        child_days = _target_days(p, expected_ret, ex, fdays)
+        cv_label, cv_color, cv_tip = _bull_bear(p, child_side)
         option_details_child = (
             f"<b>{contract}</b><br>"
             f"<small>expiry {ex.get('expiration', '—')} · DTE {ex.get('days_to_expiry', '—')} · "
@@ -342,11 +523,14 @@ def _strategy_summary_row(p: PredictionResult, min_dte: int) -> str:
             f"vol/OI {ex.get('exact_contract_volume', '—')}/{ex.get('exact_contract_oi', '—')} · "
             f"IV Rank {ex.get('iv_rank', '—')} · Δ/Θ {ex.get('delta', '—')}/{ex.get('theta_per_day', '—')}</small>"
         )
-        note = (
-            f"TRADE SUMMARY {p.ticker}: {child_action}; underlying entry {current}; "
-            f"target {target}; stop {stop}; option {contract}; expiry {ex.get('expiration')}; "
-            f"option entry {opt_price}; option target {opt_exit}; option stop {opt_stop}; "
-            f"DTE {ex.get('days_to_expiry')}; premium cap {MAX_STRATEGY_OPTION_PRICE}; research only."
+        child_mult = ex.get("contract_multiplier") or 100
+        child_pp = _profit_potential(opt_price, opt_exit, child_mult)
+        child_vol = ex.get("exact_contract_volume")
+        child_vol_txt = f"{int(child_vol):,}" if child_vol not in (None, "", "—") else "—"
+        note = _clear_trade_note(
+            "TRADE SUMMARY", p.ticker, str(child_action), current, target, child_days, stop,
+            contract=contract, expiry=ex.get("expiration"),
+            opt_entry=opt_price, opt_exit=opt_exit, opt_stop=opt_stop, multiplier=child_mult,
         )
         option_trade = (
             f"<button class='tab signal-add-trade' data-instrument='option' data-tk='{_attr(contract)}' "
@@ -370,36 +554,42 @@ def _strategy_summary_row(p: PredictionResult, min_dte: int) -> str:
             f"data-summary-parent='{p.ticker}' data-side='{child_side}' "
             f"data-er='{_attr(expected_ret if expected_ret is not None else '')}' "
             f"data-stop-pct='{stop_pct:.5f}' data-delta='{_attr(delta if delta is not None else '')}' "
-            f"data-option-entry='{_attr(opt_price if opt_price is not None else '')}'>"
+            f"data-option-entry='{_attr(opt_price if opt_price is not None else '')}' "
+            f"data-multiplier='{_attr(child_mult)}'>"
             f"<td><small>↳ {p.ticker} · {ex.get('expiration')}</small></td>"
             f"<td style='color:{child_side_color};font-weight:800'>{child_side}</td>"
+            f"<td style='color:{cv_color};font-weight:800' title='{_attr(cv_tip)}'>{cv_label}</td>"
             f"<td>option</td>"
             f"<td>{p.opportunity_score:.0f}/{p.confidence_score:.0f}/{p.risk_score:.0f}<br>"
             f"<small>{prob_txt} · {expected_txt}</small></td>"
             f"<td class='px strategy-current' data-role='current' data-tk='{p.ticker}'>{_fmt_money(current)}</td>"
-            f"<td data-role='target'>{_fmt_money(target)}</td><td>{days}</td>"
+            f"<td data-role='target'>{_fmt_money(target)}</td><td>{child_days}</td>"
             f"<td data-role='stop'>{_fmt_money(stop)}</td><td data-role='exit'>{_fmt_money(target)}</td>"
+            f"<td>{child_vol_txt}</td>{_potential_cell(child_pp, min_profit_pct)}"
             f"<td>{option_details_child}</td><td>{child_why_txt}</td><td>{option_trade}</td></tr>"
         )
 
     return parent + "".join(child_rows)
 
 
-def _trade_strategy_row(p: PredictionResult, min_dte: int) -> str:
+def _trade_strategy_row(p: PredictionResult, min_dte: int, min_profit_pct: float = 5.0) -> str:
     snap = p.market_snapshot or {}
     current = _safe_float(snap.get("current_price"))
     ex = _best_strategy_expiry(p, min_dte)
     final = p.final_verdict or {}
     action = ex.get("action") or final.get("research_action", "watch_only")
     side = _signal_side(p.direction.value, str(action))
-    days, expected_ret, prob_side, p05 = _forecast_for_strategy(p, side)
-    target = current * (1 + expected_ret / 100) if current is not None and expected_ret is not None else None
-
-    downside = abs(p05 or 0) / 100 * 0.75 if p05 is not None else 0.045
-    stop_pct = min(max(downside, 0.035), 0.095)
-    stop = None
-    if current is not None:
-        stop = current * (1 + stop_pct) if side == "short" else current * (1 - stop_pct)
+    fdays, expected_ret, prob_side, p05 = _forecast_for_strategy(p, side)
+    days = _target_days(p, expected_ret, ex, fdays)
+    # Authoritative target/stop from the engine candidate gate (single source of truth).
+    target = p.target_price if p.target_price is not None else (
+        current * (1 + expected_ret / 100) if current is not None and expected_ret is not None else None)
+    stop = p.stop_price
+    if stop is None and current is not None:
+        downside = abs(p05 or 0) / 100 * 0.75 if p05 is not None else 0.045
+        sp = min(max(downside, 0.035), 0.095)
+        stop = current * (1 + sp) if side == "short" else current * (1 - sp)
+    stop_pct = abs(current - stop) / current if (current and stop is not None) else 0.05
 
     opt_price = _safe_float(ex.get("reference_option_price"))
     delta = _safe_float(ex.get("delta"))
@@ -425,19 +615,24 @@ def _trade_strategy_row(p: PredictionResult, min_dte: int) -> str:
 
     risk_color = "#16a34a" if p.risk_score <= 35 else "#f59e0b" if p.risk_score <= 55 else "#dc2626"
     side_color = "#16a34a" if side == "long" else "#dc2626" if side == "short" else "#6b7280"
-    action_color = "#16a34a" if strategy_action == "tradeable research" else "#b45309" if strategy_action == "defined-risk spread" else "#dc2626" if strategy_action == "wait" else "#6b7280"
+    verdict_label, verdict_color, verdict_tip = _bull_bear(p, side)
     prob_txt = f"{prob_side:.1f}%" if prob_side is not None else "n/a"
     expected_txt = f"{expected_ret:+.2f}%" if expected_ret is not None else "n/a"
     contract = ex.get("reference_contract") or "—"
     opt_type = _infer_option_type(str(contract), ex.get("reference_type")) if contract != "—" else ""
-    note = (
-        f"TRADE STRATEGY {p.ticker}: {action}; strategy {strategy_action}; "
-        f"underlying entry {current}; target {target}; stop {stop}; "
-        f"option {contract}; expiry {ex.get('expiration')}; option entry {opt_price}; "
-        f"option target {opt_exit}; option stop {opt_stop}; research only."
+    strat_mult = ex.get("contract_multiplier") or 100
+    strat_pp = _profit_potential(opt_price, opt_exit, strat_mult)
+    profit_ok = _profit_ok(strat_pp, min_profit_pct)
+    if contract != "—" and not profit_ok and strategy_action in ("tradeable research", "defined-risk spread"):
+        strategy_action = "paper/watch"
+    action_color = "#16a34a" if strategy_action == "tradeable research" else "#b45309" if strategy_action == "defined-risk spread" else "#dc2626" if strategy_action == "wait" else "#6b7280"
+    note = _clear_trade_note(
+        "TRADE STRATEGY", p.ticker, f"{action} · {strategy_action}", current, target, days, stop,
+        contract=(contract if contract != "—" else None), expiry=ex.get("expiration"),
+        opt_entry=opt_price, opt_exit=opt_exit, opt_stop=opt_stop, multiplier=strat_mult,
     )
     option_btn = "—"
-    if contract != "—" and opt_price is not None and action != "NO TRADE":
+    if contract != "—" and opt_price is not None and action != "NO TRADE" and profit_ok:
         option_btn = (
             f"<button class='tab signal-add-trade' data-instrument='option' data-tk='{_attr(contract)}' "
             f"data-underlying='{_attr(p.ticker)}' data-contract='{_attr(contract)}' data-side='long' "
@@ -461,9 +656,11 @@ def _trade_strategy_row(p: PredictionResult, min_dte: int) -> str:
         f"<tr id='strategy-{p.ticker}' class='strategy-row' data-side='{side}' "
         f"data-er='{_attr(expected_ret if expected_ret is not None else '')}' "
         f"data-stop-pct='{stop_pct:.5f}' data-delta='{_attr(delta if delta is not None else '')}' "
-        f"data-option-entry='{_attr(opt_price if opt_price is not None else '')}'>"
+        f"data-option-entry='{_attr(opt_price if opt_price is not None else '')}' "
+        f"data-multiplier='{_attr(strat_mult)}'>"
         f"<td><b>{p.ticker}</b><br><small>{final.get('label', p.direction.value)}</small></td>"
         f"<td style='color:{side_color};font-weight:700'>{side}</td>"
+        f"<td style='color:{verdict_color};font-weight:800' title='{_attr(verdict_tip)}'>{verdict_label}</td>"
         f"<td style='color:{action_color};font-weight:700'>{strategy_action}</td>"
         f"<td>{p.opportunity_score:.0f}/{p.confidence_score:.0f}/{p.risk_score:.0f}</td>"
         f"<td style='color:{risk_color};font-weight:700'>{p.risk.risk_level.value}</td>"
@@ -477,6 +674,7 @@ def _trade_strategy_row(p: PredictionResult, min_dte: int) -> str:
         f"<td data-role='option-entry'>{_fmt_money(opt_price)}</td>"
         f"<td data-role='option-stop'>{_fmt_money(opt_stop)}</td>"
         f"<td data-role='option-exit'>{_fmt_money(opt_exit)}</td>"
+        f"{_potential_cell(strat_pp, min_profit_pct)}"
         f"<td>{ex.get('confidence', '—')}</td><td>{readiness}</td><td>{gate}</td>"
         f"<td>{spread if spread is not None else '—'}</td>"
         f"<td>{ex.get('exact_contract_volume', '—')} / {ex.get('exact_contract_oi', '—')}</td>"
@@ -485,12 +683,234 @@ def _trade_strategy_row(p: PredictionResult, min_dte: int) -> str:
     )
 
 
+def _regime_banner_html(result: "RunResult") -> str:
+    """Top-of-page market-regime banner — the plain-English 'why is the market
+    up/down today?' read that drives the per-ticker beta sensitivity."""
+    reg = dict(getattr(result, "market_regime", None) or {})
+    if not reg and result.predictions:
+        reg = dict(result.predictions[0].market_regime or {})
+    if not reg or not reg.get("available"):
+        return ""
+    label = str(reg.get("label", "neutral")).replace("_", " ")
+    score = reg.get("score")
+    palette = {
+        "strong risk off": ("#7f1d1d", "#fecaca"),
+        "risk off": ("#b91c1c", "#fee2e2"),
+        "neutral": ("#374151", "#e5e7eb"),
+        "mildly risk on": ("#15803d", "#dcfce7"),
+        "risk on": ("#166534", "#dcfce7"),
+    }
+    bg, fg = palette.get(label, ("#374151", "#e5e7eb"))
+    drivers = reg.get("drivers") or []
+    vix = reg.get("vix")
+    spy = reg.get("spy_change_5d_pct")
+    chips = []
+    if vix is not None:
+        chips.append(f"VIX {vix:.0f}")
+    if spy is not None:
+        chips.append(f"S&P 5-day {spy:+.1f}%")
+    if reg.get("breadth_pct") is not None:
+        chips.append(f"breadth {reg['breadth_pct']:.0f}%")
+    chip_html = " · ".join(chips)
+    driver_html = "".join(f"<li>{d}</li>" for d in drivers[:5])
+    score_txt = f"{score:.0f}/100" if isinstance(score, (int, float)) else "n/a"
+    return (
+        f"<div style='margin:10px 16px;padding:10px 14px;border-radius:8px;"
+        f"background:{bg};color:{fg};font-size:13px'>"
+        f"<b style='font-size:14px'>Market regime: {label.upper()} ({score_txt})</b>"
+        f"{(' — ' + chip_html) if chip_html else ''}"
+        f"<details style='margin-top:4px'><summary style='cursor:pointer'>Why — and how it adjusts every prediction</summary>"
+        f"<ul style='margin:6px 0 2px 18px'>{driver_html or '<li>No strong broad-market driver.</li>'}</ul>"
+        f"<small>In a risk-off tape, single-name long confidence is trimmed and a tighter stop is advised; "
+        f"short/put theses are mildly confirmed. The broad tape never invents direction — it only "
+        f"down-weights conviction when it fights the single-name read.</small></details></div>"
+    )
+
+
+def _index_strategies_section(result: "RunResult", max_price: float, min_profit: float) -> str:
+    """The primary focus tab: index option STRATEGIES, each with confidence.
+    Lower premium + higher volume + higher momentum float to the top; the strict
+    actionable gate is underlying >=50 index points AND option >=10%.
+    Watch rows still populate every field so the table never goes blank."""
+    rows = build_index_strategies(
+        result.predictions, max_option_price=max_price, min_profit_pct=min_profit, per_index=3
+    )
+    if not rows:
+        body = (
+            f"<tr><td colspan='17'>No index option chains returned data this scan "
+            f"for the supported US index universe (SPX/XSP/NDX/XND/RUT/VIX/DJX/OEX). "
+            f"Re-run, or check the index entries in <code>config/watchlist.yml</code>.</td></tr>"
+        )
+    else:
+        cells = []
+        for r in rows:
+            dir_color = "#16a34a" if r["direction"] == "up" else "#dc2626" if r["direction"] == "down" else "#6b7280"
+            profit_color = "#16a34a" if r["profit_ok"] else "#dc2626"
+            move_color = "#16a34a" if r["move_ok"] else "#dc2626"
+            note = _clear_trade_note(
+                "INDEX OPTION", r["tradeable"], f"{r['strategy']} ({r['action']})",
+                r["underlying_current"], r["underlying_target"], r["dte"] or 0, None,
+                contract=r["contract"], expiry=r["expiration"],
+                opt_entry=r["entry_premium"], opt_exit=r["est_exit"], opt_stop=round(r["entry_premium"] * 0.65, 2),
+            )
+            opt_type = "call" if r["direction"] == "up" else "put" if r["direction"] == "down" else ""
+            add_btn = (
+                f"<button class='tab signal-add-trade' data-instrument='option' data-tk='{_attr(r['contract'])}' "
+                f"data-underlying='{_attr(r['tradeable'])}' data-contract='{_attr(r['contract'])}' data-side='long' "
+                f"data-expiry='{_attr(r['expiration'])}' data-option-type='{_attr(opt_type)}' "
+                f"data-strike='{_attr(r['strike'] or '')}' data-price='{_attr(r['entry_premium'])}' data-qty='1' "
+                f"data-multiplier='100' data-note='{_attr(note)}'>Add option</button>"
+                if r["action"] != "NO TRADE" else "—"
+            )
+            cells.append(
+                f"<tr>"
+                f"<td><b>{r['index_label']}</b><br><small>{r['index']}</small></td>"
+                f"<td style='color:{dir_color};font-weight:800'>{r['strategy']}<br><small>{r['arrow']} {r['action']}</small></td>"
+                f"<td style='color:{r['status_color']};font-weight:800'>{r['status']}</td>"
+                f"<td style='font-weight:800'>{r['confidence']:.0f}</td>"
+                f"<td>{r['contract']}<br><small>exp {r['expiration']} · DTE {r['dte']} · strike {r['strike']}</small></td>"
+                f"<td>{_fmt_money(r['entry_premium'])}</td>"
+                f"<td>{_fmt_money(r['est_exit'])}</td>"
+                f"<td style='color:{profit_color};font-weight:800'>{r['profit_pct']:+.1f}%<br><small>${r['profit_per_contract']:+,.0f}/ctr</small></td>"
+                f"<td>{r['volume']:,}</td><td>{r['open_interest']:,}</td>"
+                f"<td>{r['momentum']:.0f}</td>"
+                f"<td>{_fmt_money(r['underlying_current'])}</td><td>{_fmt_money(r['underlying_target'])}</td>"
+                f"<td style='color:{move_color};font-weight:700'>{r['underlying_move_points']:+.1f} pts<br><small>{r['underlying_move_pct']:+.1f}%</small></td>"
+                f"<td>{r['iv'] if r['iv'] is not None else '—'}% / {r['spread_pct'] if r['spread_pct'] is not None else '—'}%</td>"
+                f"<td>{r['why']}</td>"
+                f"<td>{add_btn}</td></tr>"
+            )
+        body = "".join(cells)
+    return (
+        "<section id=\"index_strategies\" class=\"view\"><div class=\"panel\">"
+        "<h3>Index Options Strategies <span style=\"font-weight:400;font-size:13px\">"
+        "(primary focus · per-strategy confidence · research only)</span></h3>"
+        "<p><b>Indices only</b> (SPX, XSP, NDX, XND, RUT, VIX, DJX, OEX). Each strategy carries "
+        f"its own <b>Confidence</b>. We prefer the <b>lowest premium (&lt; ${max_price:.0f})</b> with the "
+        f"<b>highest volume + momentum</b>. A row is <b>✅ ACTIONABLE</b> only when the strict rule holds: "
+        f"<b>underlying expected move ≥ 50 index points AND option profit ≥ {min_profit:.0f}%</b>; otherwise it is shown with "
+        "the gap so you can still see the full analysis. Drivers fold in macro regime, news, government, "
+        "geopolitical and oil context. Not financial advice.</p>"
+        "<table id=\"indexStrategiesTable\"><thead><tr>"
+        "<th>Index</th><th>Strategy / call</th><th title='Strict gate: underlying >=50 index points AND option >=10%'>Status</th>"
+        "<th>Confidence</th><th>Contract</th><th>Entry premium</th><th>Est. exit</th>"
+        "<th title='Estimated option premium gain; must be ≥10%'>Profit %</th><th>Volume</th><th>OI</th>"
+        "<th title='Underlying price/volume momentum 0-100'>Momentum</th><th>Underlying now</th><th>Target</th>"
+        "<th title='Index expected move; must be >=50 points'>Index move</th><th>IV / Spread</th><th>Why (all factors)</th><th>Trade</th>"
+        "</tr></thead><tbody>" + body + "</tbody></table>"
+        "<p class=\"disc\">Estimated exit uses delta-adjusted move to the model target; verify live bid/ask, "
+        "spread, IV and liquidity before any real order. Research only.</p></div></section>"
+    )
+
+
+def _coverage_cell(p: PredictionResult) -> str:
+    """Confidence-tab cell: data coverage + the honest ceiling that explains why
+    confidence can't exceed what the available factor data supports."""
+    fc = p.factor_coverage or {}
+    if not fc:
+        return "<td>n/a</td>"
+    pct = fc.get("coverage_pct")
+    covered = fc.get("covered_count")
+    total = fc.get("total_groups")
+    ceiling = fc.get("confidence_ceiling")
+    reason = fc.get("ceiling_reason", "")
+    missing = ", ".join(fc.get("missing_factor_labels", [])[:6])
+    return (
+        f"<td title='{_attr(reason)}'><b>{covered}/{total}</b> groups ({pct:.0f}%)<br>"
+        f"<small>ceiling ~{ceiling:.0f} · add: {missing or '—'}</small></td>"
+    )
+
+
+def _bull_bear(p: PredictionResult, side: str) -> tuple[str, str, str]:
+    """Consolidated Bull/Bear research verdict, driven by the STRICT candidate
+    gate (single source of truth). A name is only shown BULLISH/BEARISH when its
+    honest expected move clears the required points + 5% + 2:1 reward/risk bar;
+    otherwise it shows WATCHLIST / REJECTED / NO TRADE with the reason."""
+    vs = p.validation_status
+    label = (p.final_verdict or {}).get("label", p.direction.value)
+    reason = p.rejected_reason or ""
+    if vs == "VALID_RESEARCH_CANDIDATE":
+        strength = "strong" if "strong" in label else "moderate"
+        em = f"{p.expected_percent:+.1f}%" if p.expected_percent is not None else ""
+        rr = f"{p.reward_risk_ratio:.1f}:1" if p.reward_risk_ratio is not None else ""
+        if "bull" in label:
+            return (f"🟢 BULLISH · {strength}", "#16a34a",
+                    f"Valid bullish research candidate — expected {em}, reward/risk {rr}, confidence {p.confidence_score:.0f}.")
+        return (f"🔴 BEARISH · {strength}", "#dc2626",
+                f"Valid bearish research candidate — expected {em}, reward/risk {rr}, confidence {p.confidence_score:.0f}.")
+    if vs == "WATCHLIST":
+        return ("👀 WATCHLIST", "#f59e0b", reason or "Move qualifies but conviction is light — watch, don't trade yet.")
+    if vs == "REJECTED":
+        return ("⛔ REJECTED", "#6b7280", reason or "Did not clear the strict expected-move / reward-risk gate.")
+    return ("⚪ NO TRADE", "#6b7280", reason or "No clear directional edge — signals mixed/insufficient.")
+
+
+def _profit_potential(entry: float | None, exit_: float | None, multiplier: float = 100) -> dict | None:
+    """Estimated option premium gain entry→exit, in points, % and $/contract."""
+    if entry is None or exit_ is None or entry <= 0:
+        return None
+    pts = float(exit_) - float(entry)
+    return {"points": pts, "pct": pts / float(entry) * 100, "per_contract": pts * (multiplier or 100)}
+
+
+def _profit_ok(pp: dict | None, min_pct: float) -> bool:
+    return bool(pp and pp.get("pct") is not None and float(pp["pct"]) >= min_pct)
+
+
+def _potential_cell(pp: dict | None, min_pct: float) -> str:
+    """Strategy cell flagging whether the option premium move clears the minimum
+    worthwhile percentage profit."""
+    if not pp:
+        return f"<td data-role='profit-potential' data-min-profit-pct='{min_pct:.4f}'>—</td>"
+    pts, pct, pc = pp["points"], pp["pct"], pp["per_contract"]
+    ok = _profit_ok(pp, min_pct)
+    color = "#16a34a" if ok else "#dc2626"
+    flag = "" if ok else f" ⚠️ low &lt;{min_pct:.0f}%"
+    return (
+        f"<td data-role='profit-potential' data-min-profit-pct='{min_pct:.4f}' "
+        f"style='color:{color};font-weight:700' "
+        f"title='Estimated option premium gain entry→exit. Below {min_pct:.0f}% is flagged low-potential.'>"
+        f"{pct:+.0f}%<br><small>{pts:+.2f} pts · ${pc:+,.0f}/contract{flag}</small></td>"
+    )
+
+
+def _clear_trade_note(
+    kind: str, ticker: str, side_word: str,
+    current: float | None, target: float | None, days: int, stop: float | None,
+    contract: str | None = None, expiry: str | None = None,
+    opt_entry: float | None = None, opt_exit: float | None = None, opt_stop: float | None = None,
+    multiplier: float = 100,
+) -> str:
+    """Human-readable trade note: where price is NOW, where it should reach and by
+    when, the stop, and the option profit in points/$/% per contract."""
+    parts = [f"{kind} {ticker} — {side_word}."]
+    if current is not None and target is not None:
+        mv = (target / current - 1) * 100 if current else 0.0
+        stop_txt = f"; stop ${stop:.2f}" if stop is not None else ""
+        parts.append(f"Underlying now ${current:.2f} → target ${target:.2f} ({mv:+.1f}%) within ~{days} session(s){stop_txt}.")
+    if contract and opt_entry is not None:
+        seg = f"Option {contract}"
+        if expiry:
+            seg += f" (exp {expiry})"
+        seg += f": buy ~${opt_entry:.2f}"
+        if opt_exit is not None:
+            pts = opt_exit - opt_entry
+            pc = pts * (multiplier or 100)
+            pct = pts / opt_entry * 100 if opt_entry else 0.0
+            seg += f", exit ~${opt_exit:.2f} (+${pts:.2f}/sh = ${pc:,.0f}/contract, {pct:+.0f}%)"
+        if opt_stop is not None:
+            seg += f", stop ${opt_stop:.2f}"
+        parts.append(seg + ".")
+    parts.append("Research only, not financial advice.")
+    return " ".join(parts)
+
+
 def _opt_verdict(action: str, gate: str) -> tuple[str, str, str]:
     """Consolidate the gate into ONE plain tradeability verdict for the Options
     Edge row. Returns (label, color, plain-English meaning)."""
     if action == "NO TRADE":
         return ("🚫 NO TRADE", "#6b7280",
-                "No directional edge right now — stay out of options on this name.")
+                "No live trade right now — either the directional edge is weak or the setup failed the index/options gate.")
     g = (gate or "").lower()
     if g == "high":
         return ("✅ TRADEABLE", "#16a34a",
@@ -603,6 +1023,17 @@ def render_markdown(result: RunResult) -> str:
     for p in result.predictions:
         lines.append(f"### {_emoji(p)} {p.ticker} — {p.direction.value.replace('_', ' ').title()}")
         lines.append(
+            f"- **Verdict:** {(p.final_verdict or {}).get('label','')} "
+            f"({p.validation_status})" + (f" — {p.rejected_reason}" if p.rejected_reason else "")
+        )
+        if p.target_price is not None:
+            lines.append(
+                f"- **Strict gate:** current {(p.market_snapshot or {}).get('current_price')} → "
+                f"target {p.target_price} · expected {p.expected_points:+.2f}pts / {p.expected_percent:+.1f}% "
+                f"(required ≥ {p.final_required_points:.2f}pts & 5%) · stop {p.stop_price} · "
+                f"reward/risk {p.reward_risk_ratio if p.reward_risk_ratio is not None else 'n/a'}"
+            )
+        lines.append(
             f"- **Scores:** opportunity {p.opportunity_score:.0f} · confidence {p.confidence_score:.0f} "
             f"· risk {p.risk_score:.0f} ({p.risk.risk_level.value}) · severity {p.severity.value}"
         )
@@ -640,6 +1071,17 @@ def render_markdown(result: RunResult) -> str:
             lines.append("- **Policy/government impact:**")
             for pi in p.policy_impacts[:4]:
                 lines.append(f"  - {pi}")
+        econ = _economic_event_impact(p)
+        if econ:
+            lines.append(
+                f"- **Economic event impact:** {econ.get('risk_level', 'quiet')} risk; "
+                f"{econ.get('summary', '')}"
+            )
+            for ev in (econ.get("events") or [])[:3]:
+                lines.append(
+                    f"  - {ev.get('date')} {ev.get('title')} ({ev.get('impact')}, "
+                    f"{ev.get('days_away')}d): {ev.get('channel')}"
+                )
         if p.global_correlations:
             gc = " · ".join(f"{k} {v:+.2f}" for k, v in list(p.global_correlations.items())[:5])
             lines.append(f"- **Global correlations (60d):** {gc}")
@@ -673,17 +1115,33 @@ def render_json(result: RunResult) -> str:
 def render_csv(result: RunResult) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["ticker", "asset_type", "direction", "opportunity", "confidence", "risk",
-                "risk_level", "severity", "horizon", "strategy"])
+    w.writerow(["ticker", "asset_type", "direction", "final_verdict", "validation_status",
+                "current_price", "target_price", "expected_points", "expected_percent",
+                "final_required_points", "stop_price", "reward_risk_ratio", "rejected_reason",
+                "opportunity", "confidence", "risk", "risk_level", "economic_event_risk",
+                "economic_event_summary", "severity", "horizon", "strategy"])
     for p in result.predictions:
-        w.writerow([p.ticker, p.asset_type.value, p.direction.value, p.opportunity_score,
-                    p.confidence_score, p.risk_score, p.risk.risk_level.value, p.severity.value,
-                    p.horizon, p.strategy])
+        econ = _economic_event_impact(p)
+        w.writerow([
+            p.ticker, p.asset_type.value, p.direction.value,
+            (p.final_verdict or {}).get("label", ""), p.validation_status,
+            (p.market_snapshot or {}).get("current_price"), p.target_price,
+            p.expected_points, p.expected_percent, p.final_required_points,
+            p.stop_price, p.reward_risk_ratio, p.rejected_reason,
+            p.opportunity_score, p.confidence_score, p.risk_score,
+            p.risk.risk_level.value, econ.get("risk_level", "quiet"),
+            econ.get("summary", ""), p.severity.value, p.horizon, p.strategy,
+        ])
     return buf.getvalue()
 
 
 def render_html(result: RunResult) -> str:
-    min_option_dte = max(5, int(getattr(get_settings(), "min_option_days_to_expiry", 5) or 5))
+    _stg = get_settings()
+    min_option_dte = max(5, int(getattr(_stg, "min_option_days_to_expiry", 5) or 5))
+    min_option_profit_pct = float(getattr(_stg, "min_option_profit_pct", 5.0) or 5.0)
+    dashboard_predictions = [p for p in result.predictions if _is_index_option_prediction(p)] or result.predictions
+    regime_banner = _regime_banner_html(result)
+    index_strategies_section = _index_strategies_section(result, MAX_STRATEGY_OPTION_PRICE, min_option_profit_pct)
     rows = ""
     price_rows = ""
     why_cards = ""
@@ -698,13 +1156,13 @@ def render_html(result: RunResult) -> str:
     strategy_rows = ""
     strategy_summary_rows = ""
     strategy_predictions = sorted(
-        result.predictions,
+        dashboard_predictions,
         key=lambda pred: _strategy_sort_key(pred, min_option_dte),
         reverse=True,
     )
-    strategy_summary_rows = "".join(_strategy_summary_row(p, min_option_dte) for p in strategy_predictions)
-    strategy_rows = "".join(_trade_strategy_row(p, min_option_dte) for p in strategy_predictions)
-    for i, p in enumerate(result.predictions, 1):
+    strategy_summary_rows = "".join(_strategy_summary_row(p, min_option_dte, min_option_profit_pct) for p in strategy_predictions)
+    strategy_rows = "".join(_trade_strategy_row(p, min_option_dte, min_option_profit_pct) for p in strategy_predictions)
+    for i, p in enumerate(dashboard_predictions, 1):
         color = {"bullish": "#16a34a", "neutral_to_bullish": "#22c55e", "neutral": "#9ca3af",
                  "neutral_to_bearish": "#f87171", "bearish": "#dc2626", "avoid": "#6b7280"}.get(p.direction.value, "#999")
         snap = p.market_snapshot
@@ -736,11 +1194,36 @@ def render_html(result: RunResult) -> str:
             f"<td class='daypx {day_class}' data-tk='{p.ticker}'>{day_change_txt}</td>"
             f"<td>{p.trend_impact.get('summary', '')}</td><td>{signal_trade_btn}</td></tr>"
         )
-        side_color = "#16a34a" if "long" in action else "#dc2626" if "short" in action else "#6b7280"
+        v_side = _signal_side(p.direction.value, str(action))
+        v_fdays, v_ret, _v_ps, _v_p05 = _forecast_for_strategy(p, v_side)
+        v_current = _safe_float(snap.get("current_price")) if snap else None
+        v_target = p.target_price if p.target_price is not None else (
+            v_current * (1 + v_ret / 100) if (v_current is not None and v_ret is not None) else None)
+        v_days = _target_days(p, v_ret, None, v_fdays)
+        v_vol = snap.get("last_volume") if snap else None
+        v_vol_txt = f"{int(v_vol):,}" if v_vol not in (None, "") else "—"
+        vb_label, vb_color, vb_tip = _bull_bear(p, v_side)
+        vs = p.validation_status
+        vs_color = {"VALID_RESEARCH_CANDIDATE": "#16a34a", "WATCHLIST": "#f59e0b",
+                    "REJECTED": "#dc2626", "NO_TRADE": "#6b7280"}.get(vs, "#6b7280")
+        ep_txt = f"{p.expected_points:+.2f}" if p.expected_points is not None else "—"
+        epc_txt = f"{p.expected_percent:+.1f}%" if p.expected_percent is not None else "—"
+        epc_color = "#16a34a" if (p.expected_percent is not None and p.expected_percent >= 5) else "#dc2626"
+        frp_txt = f"{p.final_required_points:.2f}" if p.final_required_points is not None else "—"
+        rr_txt = f"{p.reward_risk_ratio:.2f}:1" if p.reward_risk_ratio is not None else "—"
+        rr_color = "#16a34a" if (p.reward_risk_ratio is not None and p.reward_risk_ratio >= 2) else "#dc2626"
         verdict_rows += (
-            f"<tr id='verdicts-{p.ticker}'><td><b>{p.ticker}</b></td><td style='color:{side_color};font-weight:700'>{final.get('label', p.direction.value)}</td>"
-            f"<td>{action}</td><td>{p.opportunity_score:.0f}</td><td>{p.confidence_score:.0f}</td>"
-            f"<td>{p.risk_score:.0f}</td><td>{'; '.join(final.get('reasons', []) or [])}</td></tr>"
+            f"<tr id='verdicts-{p.ticker}'><td><b>{p.ticker}</b></td>"
+            f"<td style='color:{vb_color};font-weight:800' title='{_attr(vb_tip)}'>{vb_label}</td>"
+            f"<td style='color:{vs_color};font-weight:800' title='{_attr(p.rejected_reason or final.get('label',''))}'>{vs.replace('_',' ')}</td>"
+            f"<td>{_fmt_money(v_current)}</td><td>{_fmt_money(v_target)}</td>"
+            f"<td>{ep_txt}</td><td style='color:{epc_color};font-weight:700'>{epc_txt}</td>"
+            f"<td title='max(price×5%, 5 if &lt;100 else 10)'>{frp_txt}</td>"
+            f"<td style='color:{rr_color};font-weight:700'>{rr_txt}</td>"
+            f"<td>{v_days}</td><td><b>{p.confidence_score:.0f}</b></td>"
+            f"<td>{p.opportunity_score:.0f}</td><td>{p.risk_score:.0f}</td>"
+            f"<td>{p.rejected_reason or '—'}</td>"
+            f"<td>{'; '.join(final.get('reasons', []) or [])}</td></tr>"
         )
         er = p.event_radar or {}
         returns = er.get("returns", {}) if er.get("available") else {}
@@ -754,6 +1237,7 @@ def render_html(result: RunResult) -> str:
         )
         trend = p.trend_impact or {}
         trace = p.confidence_trace or {}
+        econ_cell = _economic_event_cell(p)
         trace_links = "".join(
             f"<a href='{url}' target='_blank'>source</a> "
             for url in trace.get("top_source_links", [])[:4]
@@ -778,25 +1262,38 @@ def render_html(result: RunResult) -> str:
             f"<td>{trace.get('directional_conviction_pct', 'n/a')}</td>"
             f"<td>{trace.get('data_quality_pct', 'n/a')}</td>"
             f"<td>{trace.get('agreement_pct', 'n/a')}</td>"
+            f"{_coverage_cell(p)}"
             f"<td>{trace.get('evidence_count', 0)}</td>"
             f"<td>{', '.join(trace.get('missing_engines', []) or []) or 'none'}</td>"
+            f"<td>{econ_cell}</td>"
             f"<td><a href='/ticker/{p.ticker}' target='_blank'>signal JSON</a> · "
             f"<a href='/signals' target='_blank'>all signals</a> · "
             f"<a href='#' data-goto='why' data-ticker='{p.ticker}'>why</a> · "
             f"<a href='#' data-goto='news' data-ticker='{p.ticker}'>news</a> · {trace_links}</td></tr>"
         )
+        show_index_options = _is_index_option_prediction(p)
         oi = p.options_trade_idea or {}
+        # Underlying model target (forecast-derived) shared across this ticker's expiries.
+        o_side = _signal_side(p.direction.value, str((p.final_verdict or {}).get("research_action", "")))
+        _o_fdays, o_ret, _o_ps, _o_p05 = _forecast_for_strategy(p, o_side)
+        o_current = _safe_float((p.market_snapshot or {}).get("current_price"))
+        o_target = o_current * (1 + o_ret / 100) if (o_current is not None and o_ret is not None) else None
+        o_target_txt = _fmt_money(o_target)
         top_exp = [
             ex for ex in (oi.get("top_expiries") or [])
             if int(ex.get("days_to_expiry") or 0) >= min_option_dte
         ]
+        if not show_index_options:
+            top_exp = []
         src = oi.get("data_source", "n/a")
         _cmap = {"green": "#16a34a", "orange": "#f59e0b", "red": "#dc2626"}
         algo_txt = f"{oi.get('algo_confluence', 'n/a')}/5 ({oi.get('algo_confluence_label', 'n/a')})"
-        if not top_exp:
+        if not show_index_options:
+            pass
+        elif not top_exp:
             options_rows += (
                 f"<tr id='options-{p.ticker}' class='opt-parent'><td><b>{p.ticker}</b><br><small>{src}</small></td>"
-                f"<td colspan='30'>No live options chain available from yfinance or CBOE for this name. "
+                f"<td colspan='32'>No qualifying index-option trade. "
                 f"Underlying bias: {oi.get('bias', 'n/a')} · algo confluence {algo_txt}.</td></tr>"
             )
         else:
@@ -891,12 +1388,20 @@ def render_html(result: RunResult) -> str:
                     "spread only": "Add (spread leg)",
                     "paper only": "Add (paper)",
                 }.get(gate, "Add (watch)")
-                opt_note = (
-                    f"OPTIONS {p.ticker}: {ex.get('action')} {opt_contract}; "
-                    f"expiry {ex.get('expiration')}; DTE {ex.get('days_to_expiry')}; "
-                    f"type {opt_type or 'n/a'}; ATM {ex.get('atm_strike')}; confidence {ex.get('confidence')}; "
-                    f"verdict {verdict_label}; gate {gate}; underlying {current_price}; "
-                    f"lot {multiplier} shares/contract."
+                _o_delta = _safe_float(ex.get("delta"))
+                _opt_price_num = _safe_float(opt_price)
+                _opt_exit_num = None
+                if _opt_price_num is not None and _o_delta is not None and o_current is not None and o_target is not None:
+                    _opt_exit_num = _opt_price_num + abs(_o_delta) * abs(o_target - o_current)
+                elif _opt_price_num is not None:
+                    _opt_exit_num = _opt_price_num * 1.25
+                _opt_stop_num = _opt_price_num * 0.65 if _opt_price_num is not None else None
+                opt_note = _clear_trade_note(
+                    "OPTIONS", p.ticker, f"{ex.get('action')} (gate {gate})",
+                    o_current, o_target, ex.get("days_to_expiry") or 0, None,
+                    contract=opt_contract, expiry=ex.get("expiration"),
+                    opt_entry=_opt_price_num, opt_exit=_opt_exit_num, opt_stop=_opt_stop_num,
+                    multiplier=multiplier,
                 )
                 if opt_contract and ex.get("action") != "NO TRADE":
                     option_btn = (
@@ -913,6 +1418,7 @@ def render_html(result: RunResult) -> str:
                 options_rows += (
                     f"<tr{row_meta}><td>{tk_cell}</td>"
                     f"<td class='px' data-tk='{p.ticker}'>{current_price}</td>"
+                    f"<td>{o_target_txt}</td><td>{ex.get('days_to_expiry')}</td>"
                     f"<td>{ex.get('expiration')}</td><td>{ex.get('days_to_expiry')}</td>"
                     f"<td style='background:{ac};color:#fff;font-weight:700;text-align:center'>{ex.get('action')}</td>"
                     f"<td style='color:{ac};font-weight:700;font-size:15px'>{ex.get('arrow')} {ex.get('direction')}</td>"
@@ -944,9 +1450,12 @@ def render_html(result: RunResult) -> str:
                         f"<br><b>Best structure:</b> {strategy_label}"
                         f"{' &nbsp;·&nbsp; ' + structure_html if structure_html != '—' else ''}"
                     )
+                opt_side = "long" if ex.get("direction") == "up" else "short" if ex.get("direction") == "down" else ""
+                bb_label, bb_color, bb_tip = _bull_bear(p, opt_side)
                 options_rows += (
-                    f"<tr{why_meta}><td colspan='31'>"
-                    f"<span class='verdict-badge' style='color:{verdict_color}'>{verdict_label}</span> "
+                    f"<tr{why_meta}><td colspan='33'>"
+                    f"<span class='verdict-badge' style='color:{bb_color}' title='{_attr(bb_tip)}'>{bb_label}</span> "
+                    f"&nbsp; <span class='verdict-badge' style='color:{verdict_color}'>{verdict_label}</span> "
                     f"— {verdict_meaning}"
                     f"{struct_line}"
                     f"<br><b>Why (evidence):</b> {reasons_html}"
@@ -959,6 +1468,7 @@ def render_html(result: RunResult) -> str:
             f"<td>{trend.get('social_net_sentiment', 'n/a')}</td>"
             f"<td>{trend.get('forecast_prob_up', 'n/a')}</td>"
             f"<td>{trend.get('forecast_expected_return_pct', 'n/a')}</td>"
+            f"<td>{econ_cell}</td>"
             f"<td>{trend.get('summary', '')}</td></tr>"
         )
         price_rows += (
@@ -1047,6 +1557,8 @@ def render_html(result: RunResult) -> str:
             f"<p><b>Direction:</b> {p.direction.value} · <b>Expected move:</b> {em_txt} · "
             f"<b>Invalidation:</b> {'; '.join(p.invalidation_conditions)}</p>"
             f"{forecast_html}"
+            f"{_economic_event_html(p)}"
+            f"{_stock_market_engine_html(p)}"
             f"{news_digest_html}"
             f"{policy_html}"
             f"{gc_html}"
@@ -1112,6 +1624,11 @@ def render_html(result: RunResult) -> str:
         paper_rows = "<tr><td colspan='10'>No simulated test trades opened because no directional, non-blocked signals were available.</td></tr>"
     if not manual_rows:
         manual_rows = "<tr><td colspan='16'>No manual trades marked yet. Add one below, or use Add trade from Overview/Options Edge to capture the current displayed price.</td></tr>"
+    if not options_rows:
+        options_rows = (
+            "<tr><td colspan='33'>No index-option rows qualified in this scan. "
+            "Options Edge only considers SPX, XSP, NDX, XND, RUT, VIX, DJX, and OEX.</td></tr>"
+        )
     validation_rows = "".join(
         f"<tr><td>{name}</td><td>{status}</td><td>{note}</td></tr>"
         for name, status, note in [
@@ -1191,8 +1708,10 @@ def render_html(result: RunResult) -> str:
 </style></head><body>
 <header><h1>{__product__}</h1>
 <div class="meta">Generated {now} · strategy {result.strategy} · horizon {result.horizon}</div></header>
+{regime_banner}
 <nav>
 <button class="tab active" data-tab="overview">Overview</button>
+<button class="tab" data-tab="index_strategies">⭐ Index Options</button>
 <button class="tab" data-tab="prices">Current Prices</button>
 <button class="tab" data-tab="why">Why Suggested</button>
 <button class="tab" data-tab="news">News & Evidence</button>
@@ -1229,7 +1748,7 @@ def render_html(result: RunResult) -> str:
 <li><b>Risk (0–100)</b>: how dangerous — higher is riskier (liquidity, conflicting signals, high IV, stale/synthetic data).</li>
 <li><b>Severity</b>: alert priority — P0 urgent · P1 strong · P2 watch · P3 info only.</li>
 <li><b>Current</b>: latest real market price · <b>Day</b>: % change vs previous close.</li>
-<li><b>Trend &amp; news impact</b>: today's move + news count/tone + social + forecast P(up) + any government / Trump-admin policy links to this name.</li>
+<li><b>Trend &amp; news impact</b>: today's move + news count/tone + social + forecast P(up) + any government / Trump-admin policy links and scheduled economic-event risk to this name.</li>
 <li><b>How to act</b>: trade only names where Direction is bullish/bearish <i>and</i> Confidence clears your threshold and Risk is acceptable. Skip neutral.</li>
 </ul></div>
 <div class="panel"><table><thead><tr>
@@ -1241,40 +1760,43 @@ def render_html(result: RunResult) -> str:
 <th title="Alert priority: P0 urgent, P1 strong, P2 watch, P3 info">Severity</th>
 <th title="Latest real market price">Current price</th>
 <th title="Percent change vs previous close">Day %</th>
-<th title="Today's move, news volume/tone, social, forecast tilt, and policy links">Trend &amp; news impact</th>
+<th title="Today's move, news volume/tone, social, forecast tilt, policy links, and scheduled economic-event risk">Trend &amp; news impact</th>
 <th title="Create a Manual Trade row using the current displayed entry price">Manual</th>
 </tr></thead><tbody>{rows}</tbody></table></div></section>
+{index_strategies_section}
 <section id="prices" class="view"><div class="panel"><table><thead><tr><th>Ticker</th><th>Current</th><th>Day change</th><th>Previous close</th><th>Volume</th><th>Source</th><th>Retrieved</th></tr></thead><tbody>{price_rows}</tbody></table></div></section>
 <section id="why" class="view">{why_cards}</section>
 <section id="news" class="view">{news_cards}</section>
-<section id="trends" class="view"><div class="panel"><h3>Trends & News Impact</h3><table><thead><tr><th>Ticker</th><th>Day</th><th>News</th><th>Providers</th><th>Evidence polarity</th><th>Policy links</th><th>Social</th><th>P(up)</th><th>Forecast %</th><th>Summary</th></tr></thead><tbody>{trend_rows}</tbody></table></div></section>
+<section id="trends" class="view"><div class="panel"><h3>Trends & News Impact</h3><p><b>Economic events</b> combines scheduled FOMC/jobs/jobless/curated macro releases plus ticker earnings inside the model horizon. High/Extreme means the setup can gap on the release, so options should favor defined-risk structures or wait for confirmation.</p><table><thead><tr><th>Ticker</th><th>Day</th><th>News</th><th>Providers</th><th>Evidence polarity</th><th>Policy links</th><th>Social</th><th>P(up)</th><th>Forecast %</th><th>Economic events</th><th>Summary</th></tr></thead><tbody>{trend_rows}</tbody></table></div></section>
 <section id="confidence" class="view"><div class="panel"><h3>Confidence Traces — why we trust each BUY/SELL call</h3>
 <p><b>Confidence answers: "how convinced are we in the buy or sell?"</b> It is <b>data quality × directional conviction</b>. The <b>Call</b> column says whether the confidence is for a BUY (long), a SELL (short/put), or <b>NO TRADE</b> (neutral — no edge, so confidence is low by design). It is not a profit guarantee. Click a header to sort; use the links to inspect raw signal JSON, source evidence, and jump to the Why/News tabs.</p>
-<table><thead><tr><th>Ticker</th><th title="Is this confidence for a buy, a sell, or no trade?">Call</th><th title="Conviction in the buy/sell call (0-100)">Confidence</th><th title="Raw confidence and historical bucket calibration">Calibration</th><th title="How far the setup is from neutral (0=neutral, 100=clear buy/sell)">Conviction %</th><th title="Data coverage + engine agreement">Data quality %</th><th title="Engine agreement only">Agreement %</th><th>Evidence count</th><th>Missing engines</th><th>Trace links</th></tr></thead><tbody>{confidence_rows}</tbody></table></div></section>
+<table><thead><tr><th>Ticker</th><th title="Is this confidence for a buy, a sell, or no trade?">Call</th><th title="Conviction in the buy/sell call (0-100)">Confidence</th><th title="Raw confidence and historical bucket calibration">Calibration</th><th title="How far the setup is from neutral (0=neutral, 100=clear buy/sell)">Conviction %</th><th title="Data coverage + engine agreement">Data quality %</th><th title="Engine agreement only">Agreement %</th><th title="How many of the 23 MARKET_FACTOR_CHECKLIST groups have real data today, and the honest confidence ceiling that coverage supports. Hover for what to add to raise it.">Factor coverage / ceiling</th><th>Evidence count</th><th>Missing engines</th><th title="Scheduled macro/company events inside the signal horizon and their trade impact">Economic events</th><th>Trace links</th></tr></thead><tbody>{confidence_rows}</tbody></table>
+<p class="disc"><b>Why confidence rarely tops ~70 (and how to raise it honestly):</b> confidence is capped by the <b>factor-coverage ceiling</b> — the system only has live connectors for a subset of the 23 factor groups in <code>MARKET_FACTOR_CHECKLIST.md</code>. The "Factor coverage / ceiling" column shows exactly which groups are missing (e.g. earnings transcripts, analyst revisions, 13F/institutional flows, alternative data). Adding those data feeds raises the ceiling — we never inflate the number.</p></div></section>
 <section id="trade_summary" class="view"><div class="panel"><h3>Trade Summary — best plans first</h3>
-<p><b>Research only, not financial advice.</b> This compact view is sorted with the strongest actionable setups at the top. Ticker rows are grouped: click a ticker's expiry count to expand practical option ideas. Option rows are limited to <b>DTE ≥ {min_option_dte}</b> and <b>premium ≤ ${MAX_STRATEGY_OPTION_PRICE:.0f}</b>, sorted best-first, with expiry, DTE, contract, strike, option entry/stop/exit, confidence/readiness/risk/liquidity/IV/Greeks context, and an <b>Add option</b> button. Stock-only rows appear when no lower-priced qualifying option is available.</p>
+<p><b>Research only, not financial advice.</b> This compact view is sorted with the strongest actionable setups at the top. Ticker rows are grouped: click a ticker's expiry count to expand practical option ideas. Option rows are limited to <b>DTE ≥ {min_option_dte}</b>, <b>premium ≤ ${MAX_STRATEGY_OPTION_PRICE:.0f}</b>, and <b>profit potential ≥ {min_option_profit_pct:.0f}%</b>, sorted best-first, with expiry, DTE, contract, strike, option entry/stop/exit, confidence/readiness/risk/liquidity/IV/Greeks context, and an <b>Add option</b> button. This view is now index-focused first, using the supported US index universe.</p>
 <table id="tradeSummaryTable"><thead><tr>
-<th>Ticker</th><th>Bias</th><th>Instrument</th><th>Opp/Conf/Risk</th><th>Current price</th><th>Target price</th><th>Target days</th><th>Stop loss</th><th>Exit price</th><th>Option details</th><th>Summary</th><th>Trade</th>
+<th>Ticker</th><th>Bias</th><th title="Consolidated Bull/Bear research verdict (direction + conviction + confidence)">Bull/Bear</th><th>Instrument</th><th title="Opportunity / Confidence / Risk (0-100 each)">Opp/Conf/Risk</th><th>Current price</th><th>Target price</th><th title="Per-ticker, data-driven: option DTE for option plans, else sessions to reach target at the typical daily move">Target days</th><th>Stop loss</th><th>Exit price</th><th title="Underlying share volume (parent) / exact option contract volume (expiry)">Volume</th><th title="Estimated option premium gain entry→exit. Must be at least {min_option_profit_pct:.0f}% to be promoted; points/$ are shown only as context.">Profit potential</th><th>Option details</th><th>Summary</th><th>Trade</th>
 </tr></thead><tbody>{strategy_summary_rows}</tbody></table>
 <p class="disc">Live-price refresh recalculates current/target/stop/exit in this table and the detailed Trade Strategy table.</p></div></section>
 <section id="strategy" class="view"><div class="panel"><h3>Trade Strategy — target, stop, option expiry, and exit plan</h3>
-<p><b>Research only, not financial advice.</b> This tab converts the same dashboard analysis into a trade-plan view. It uses the latest signal price, 3D forecast when available, minimum {min_option_dte}-DTE options with quoted premium at or below ${MAX_STRATEGY_OPTION_PRICE:.0f}, risk/readiness gates, exact option contract liquidity, IV risk, and confidence trace. Favor <b>defined-risk spreads</b> when IV is elevated or the gate says spread only.</p>
+<p><b>Research only, not financial advice.</b> This tab converts the same dashboard analysis into a trade-plan view. It uses the latest signal price, 3D forecast when available, minimum {min_option_dte}-DTE options with quoted premium at or below ${MAX_STRATEGY_OPTION_PRICE:.0f} and profit potential at or above {min_option_profit_pct:.0f}%, risk/readiness gates, exact option contract liquidity, IV risk, and confidence trace. Favor <b>defined-risk spreads</b> when IV is elevated or the gate says spread only.</p>
 <table id="strategyTable"><thead><tr>
-<th>Ticker</th><th>Bias</th><th>Strategy action</th><th>Opp/Conf/Risk</th><th>Risk level</th>
+<th>Ticker</th><th>Bias</th><th title="Consolidated Bull/Bear research verdict (direction + conviction + confidence)">Bull/Bear</th><th>Strategy action</th><th>Opp/Conf/Risk</th><th>Risk level</th>
 <th title="Current underlying price from the latest report/live refresh">Current</th>
 <th title="Probability of the selected side from the near-term forecast">P(side)</th>
 <th title="Expected return used to compute target">Forecast %</th>
-<th title="Number of days for the target price">Target days</th>
+<th title="Per-ticker, data-driven: option DTE for option plans, else sessions to reach target at the typical daily move">Target days</th>
 <th title="Underlying target price">Target price</th>
 <th title="Underlying invalidation/stop level">Stop loss</th>
 <th title="Underlying exit price for this plan">Exit price</th>
 <th>Expiry</th><th>DTE</th><th>Option contract</th><th>Strike</th>
 <th>Option entry</th><th>Option stop</th><th>Option exit</th>
+<th title="Estimated option premium gain entry→exit. Must be at least {min_option_profit_pct:.0f}% to be promoted; points/$ are shown only as context.">Profit potential</th>
 <th>Opt conf</th><th>Readiness</th><th>Gate</th><th>Spread %</th><th>Vol/OI</th><th>IV Rank</th><th>Delta/Theta</th><th>Why</th><th>Trade</th>
 </tr></thead><tbody>{strategy_rows}</tbody></table>
 <p class="disc">Targets are model-derived research levels, not guarantees. Option exit is estimated from premium plus delta-adjusted underlying move; verify live bid/ask before any real order.</p></div></section>
-<section id="options" class="view"><div class="panel"><h3>Short-Term Options Edge <span style="font-weight:400;font-size:13px">(multi-source live chains, top 3 expirations, research only)</span></h3>
-<p>For each name we pull <b>live option chains from yfinance with a keyless CBOE delayed-quotes fallback</b> (the <i>source</i> is shown under the ticker), score every short/medium-dated expiration with a <b>default 5-DTE minimum</b>, and surface the <b>3 highest-confidence expirations</b>. The call is stated plainly: <b style="color:#16a34a">BUY CALL</b> = we expect the stock to go <b>UP ▲</b>; <b style="color:#dc2626">BUY PUT</b> = we expect it to go <b>DOWN ▼</b>; <b style="color:#f59e0b">NO TRADE</b> = neutral, no edge. The <b>Options Risk Gate</b> now deep-scores direction, data quality, algo confluence, exact-contract liquidity, DTE, IV/realized vol, Greeks/theta, flow, premium cost, and bid/ask spread. Direct <b>Add option</b> appears only for <b>high</b> gate rows. Click a ticker to expand/collapse its ranked expiries; header sorting keeps each ticker and its expiries grouped together.</p>
+<section id="options" class="view"><div class="panel"><h3>Index Options Edge <span style="font-weight:400;font-size:13px">(SPX/XSP/NDX/XND/RUT/VIX/DJX/OEX only, 50+ point expected-move gate, research only)</span></h3>
+<p>For each index we pull <b>live option chains from yfinance with a keyless CBOE delayed-quotes fallback</b> (the <i>source</i> is shown under the ticker), score every short/medium-dated expiration with a <b>default 5-DTE minimum</b>, and surface the <b>3 highest-confidence expirations</b>. The call is stated plainly: <b style="color:#16a34a">BUY CALL</b> = we expect the index to go <b>UP ▲</b>; <b style="color:#dc2626">BUY PUT</b> = we expect it to go <b>DOWN ▼</b>; <b style="color:#f59e0b">NO TRADE</b> = no live trade because the edge is weak or the 50-point gate failed. The <b>Options Risk Gate</b> now deep-scores direction, data quality, algo confluence, exact-contract liquidity, DTE, IV/realized vol, Greeks/theta, flow, premium cost, and bid/ask spread. Click a ticker to expand/collapse its ranked expiries; header sorting keeps each ticker and its expiries grouped together.</p>
 <div class="panel" style="background:#f0f6ff;font-size:13px;line-height:1.6">
 <b>Key metrics, in plain terms:</b><br>
 <b>IV</b> (implied volatility) — the market's expected price swing. <b>High IV = expensive options + IV-crush risk</b> after the event; prefer defined-risk spreads.<br>
@@ -1289,11 +1811,13 @@ def render_html(result: RunResult) -> str:
  <b style="color:#16a34a">✅ TRADEABLE</b> = clears the gate, the listed option is fine to trade ·
  <b style="color:#b45309">⚠️ TRADE AS A SPREAD</b> = <b>do NOT buy the naked option</b> (rich IV / earnings / wide spread would bleed it) — use the defined-risk <i>spread</i> shown on line 2 instead ·
  <b style="color:#dc2626">📝 PAPER ONLY</b> = track it, don't risk real money (thin liquidity / very short DTE / high IV-crush) ·
- <b style="color:#6b7280">🚫 NO TRADE</b> = no directional edge.
+ <b style="color:#6b7280">🚫 NO TRADE</b> = no live trade right now; either the directional edge is weak or the setup failed the index/options gate.
 </div>
-<table id="optionsTable"><thead><tr><th>Ticker / source</th><th title="Current underlying market price">Underlying current</th><th title="Option expiration date">Expiry</th><th title="Days to expiry">DTE</th><th title="Plain call: buy a call, buy a put, or stay out">Action</th><th title="Expected direction of the underlying">Trend</th><th title="Confidence in this options call (0-100)">Confidence</th><th title="High/medium/low/paper-only based on confidence, liquidity, risk, and spread">Readiness</th><th title="Final execution gate: high / spread only / paper only / no trade">Gate</th><th title="Contract quality from liquidity, DTE, IV, flow, and spread">Opt quality</th><th title="Reference option contract for the action">Contract</th><th title="Latest option premium from the chain">Option price</th><th title="Bid / ask from the chain when available">Bid / Ask</th><th title="Bid/ask width as % of midpoint">Spread %</th><th title="Exact contract volume / exact contract open interest">Exact Vol/OI</th><th title="Black-Scholes approximation: delta, daily theta, vega per 1 IV point">Greeks</th><th title="Price needed at expiration to break even">Breakeven</th><th title="Premium as percent of underlying spot">Premium % spot</th><th title="Implied volatility divided by 20-day realized volatility">IV/RV</th><th title="IV Rank / Percentile from accumulated point-in-time snapshots">IV Rank</th><th title="ATM put-call IV skew / next-expiry term slope, in IV percentage points">Skew/Term</th><th title="Chain-derived unusual activity score / exact-contract OI change since prior stored scan">UOA/OI Δ</th><th title="Option contract multiplier">Lot</th><th title="At-the-money strike">ATM</th><th title="Defined-risk vertical spread (long/short)">Spread</th><th title="Average implied volatility">IV</th><th title="Total option volume for this expiry">Volume</th><th title="Call volume / put volume">C/P Vol</th><th title="Total open interest (liquidity)">OI</th><th title="Put/Call volume ratio">P/C</th><th title="Add this option idea to the Manual Trades tab">Trade</th></tr></thead><tbody>{options_rows}</tbody></table>
+<table id="optionsTable"><thead><tr><th>Ticker / source</th><th title="Current underlying market price">Underlying current</th><th title="Underlying model target price (forecast-derived)">Target price</th><th title="Target horizon for this row = days to this expiry (the option trade window)">Target days</th><th title="Option expiration date">Expiry</th><th title="Days to expiry">DTE</th><th title="Plain call: buy a call, buy a put, or stay out">Action</th><th title="Expected direction of the underlying">Trend</th><th title="Confidence in this options call (0-100)">Confidence</th><th title="High/medium/low/paper-only based on confidence, liquidity, risk, and spread">Readiness</th><th title="Final execution gate: high / spread only / paper only / no trade">Gate</th><th title="Contract quality from liquidity, DTE, IV, flow, and spread">Opt quality</th><th title="Reference option contract for the action">Contract</th><th title="Latest option premium from the chain">Option price</th><th title="Bid / ask from the chain when available">Bid / Ask</th><th title="Bid/ask width as % of midpoint">Spread %</th><th title="Exact contract volume / exact contract open interest">Exact Vol/OI</th><th title="Black-Scholes approximation: delta, daily theta, vega per 1 IV point">Greeks</th><th title="Price needed at expiration to break even">Breakeven</th><th title="Premium as percent of underlying spot">Premium % spot</th><th title="Implied volatility divided by 20-day realized volatility">IV/RV</th><th title="IV Rank / Percentile from accumulated point-in-time snapshots">IV Rank</th><th title="ATM put-call IV skew / next-expiry term slope, in IV percentage points">Skew/Term</th><th title="Chain-derived unusual activity score / exact-contract OI change since prior stored scan">UOA/OI Δ</th><th title="Option contract multiplier">Lot</th><th title="At-the-money strike">ATM</th><th title="Defined-risk vertical spread (long/short)">Spread</th><th title="Average implied volatility">IV</th><th title="Total option volume for this expiry">Volume</th><th title="Call volume / put volume">C/P Vol</th><th title="Total open interest (liquidity)">OI</th><th title="Put/Call volume ratio">P/C</th><th title="Add this option idea to the Manual Trades tab">Trade</th></tr></thead><tbody>{options_rows}</tbody></table>
 <p class="disc">Live/delayed data only — no fabricated option prices. Add option records use premium × contracts × lot size (usually 100). Always verify bid/ask, spread width, Greeks, IV rank, and earnings date before any real trade.</p></div></section>
-<section id="verdicts" class="view"><div class="panel"><h3>Bullish and Bearish Research Verdicts</h3><table><thead><tr><th>Ticker</th><th>Final verdict</th><th>Research action</th><th>Opp</th><th>Conf</th><th>Risk</th><th>Why</th></tr></thead><tbody>{verdict_rows}</tbody></table></div></section>
+<section id="verdicts" class="view"><div class="panel"><h3>Bullish and Bearish Research Verdicts <span style="font-weight:400;font-size:13px">(strict expected-move / reward-risk gate)</span></h3>
+<p><b>Research only.</b> A ticker is only a <b>VALID research candidate</b> when its honest, analysis-derived move clears <b>all</b> of: expected points ≥ <code>max(price×5%, 5 if price&lt;100 else 10)</code>, expected % ≥ 5%, and reward/risk ≥ 2:1 — plus conviction thresholds. Weak setups are <b>rejected or watch-listed, never inflated</b>. Quality over quantity.</p>
+<table><thead><tr><th>Ticker</th><th title="Consolidated Bull/Bear research verdict from the strict gate">Bull/Bear</th><th title="VALID_RESEARCH_CANDIDATE / WATCHLIST / REJECTED / NO_TRADE">Validation status</th><th title="Latest underlying price">Current price</th><th title="Analysis-derived underlying target (never inflated)">Target price</th><th title="Target − Current (side-aligned)">Expected pts</th><th title="Expected move %; must be ≥ 5%">Expected %</th><th title="max(price×5%, 5 if price<100 else 10)">Final req pts</th><th title="Reward/Risk; must be ≥ 2:1">R/R</th><th title="Per-ticker sessions to target">Target days</th><th title="Conviction 0-100">Confidence</th><th title="Opportunity 0-100">Opp</th><th title="Risk 0-100 (lower better)">Risk</th><th title="Why this was rejected/watch-listed, if applicable">Rejected reason</th><th>Why</th></tr></thead><tbody>{verdict_rows}</tbody></table></div></section>
 <section id="events" class="view"><div class="panel"><h3>Event Radar — Breakout and Exhaustion Watch</h3><p>Designed to catch SNDK-style event moves early and to flag when a crowded winner may be turning bearish.</p><table><thead><tr><th>Ticker</th><th>Radar verdict</th><th>Breakout</th><th>Exhaustion</th><th>20D %</th><th>60D %</th><th>252D %</th><th>Volume x20D</th><th>Bullish clues</th><th>Bearish clues</th></tr></thead><tbody>{event_rows}</tbody></table></div></section>
 <section id="markets" class="view"><div class="panel"><h3>Global Markets — US · Europe · Asia</h3>
 <p>{global_regime}</p>
@@ -1524,6 +2048,21 @@ function fmtPlainMoney(v) {{
   const n = Number(v);
   return Number.isFinite(n) ? n.toFixed(2) : '—';
 }}
+function fmtProfitPotential(entry, exitPrice, multiplier, minPct) {{
+  const e = Number(entry), x = Number(exitPrice), m = Number(multiplier || 100), min = Number(minPct || 5);
+  if (!Number.isFinite(e) || !Number.isFinite(x) || e <= 0) return {{html:'—', ok:false}};
+  const pts = x - e;
+  const pct = pts / e * 100;
+  const pc = pts * (Number.isFinite(m) ? m : 100);
+  const ok = pct >= min;
+  const flag = ok ? '' : ' ⚠️ low <' + min.toFixed(0) + '%';
+  return {{
+    html: (pct >= 0 ? '+' : '') + pct.toFixed(0) + '%<br><small>' +
+      (pts >= 0 ? '+' : '') + pts.toFixed(2) + ' pts · $' +
+      (pc >= 0 ? '+' : '') + pc.toFixed(0) + '/contract' + flag + '</small>',
+    ok
+  }};
+}}
 function updateStrategyRows(prices) {{
   document.querySelectorAll('tr.strategy-row').forEach(row => {{
     const currentCell = row.querySelector('[data-role="current"]');
@@ -1535,6 +2074,7 @@ function updateStrategyRows(prices) {{
     const side = row.dataset.side || 'long';
     const optionEntry = Number(row.dataset.optionEntry);
     const delta = Number(row.dataset.delta);
+    const multiplier = Number(row.dataset.multiplier || 100);
     if (!Number.isFinite(price)) return;
     if (currentCell) currentCell.textContent = fmtPlainMoney(price);
     if (Number.isFinite(er)) {{
@@ -1553,6 +2093,12 @@ function updateStrategyRows(prices) {{
         const optStopCell = row.querySelector('[data-role="option-stop"]');
         if (optExitCell) optExitCell.textContent = fmtPlainMoney(optExit);
         if (optStopCell) optStopCell.textContent = fmtPlainMoney(optStop);
+        const profitCell = row.querySelector('[data-role="profit-potential"]');
+        if (profitCell) {{
+          const pp = fmtProfitPotential(optionEntry, optExit, multiplier, profitCell.dataset.minProfitPct);
+          profitCell.innerHTML = pp.html;
+          profitCell.style.color = pp.ok ? '#16a34a' : '#dc2626';
+        }}
       }}
     }}
   }});

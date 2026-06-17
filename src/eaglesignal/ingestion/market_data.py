@@ -25,6 +25,7 @@ from urllib.parse import quote
 import numpy as np
 import pandas as pd
 
+from ..analysis.index_options import index_price_scale, market_data_symbol
 from ..utils.logging import get_logger
 
 log = get_logger("ingestion.market")
@@ -141,9 +142,10 @@ def _from_yfinance(ticker: str, period: str, interval: str, statuses: list[dict[
     try:
         import yfinance as yf
 
-        tk = yf.Ticker(ticker)
+        symbol = market_data_symbol(ticker)
+        tk = yf.Ticker(symbol)
         df = yf.download(
-            ticker, period=period, interval=interval,
+            symbol, period=period, interval=interval,
             auto_adjust=True, progress=False, threads=False,
         )
         if df is None or df.empty:
@@ -154,16 +156,28 @@ def _from_yfinance(ticker: str, period: str, interval: str, statuses: list[dict[
             statuses.append({"provider": "yfinance", "status": "insufficient_rows"})
             return None
 
-        try:
-            info = tk.fast_info
-            current_price = float(info.get("last_price") or info.get("lastPrice") or df["close"].iloc[-1])
-            previous_close = float(info.get("previous_close") or info.get("previousClose") or df["close"].iloc[-2])
-        except Exception:
+        # Mini/scaled index tickers (XSP/XND/DJX) fetch their PARENT index via the
+        # alias; scale OHLCV down to the mini's quoted level so the underlying
+        # matches the mini option strikes.
+        scale = index_price_scale(ticker)
+        if scale != 1.0:
+            for col in ("open", "high", "low", "close"):
+                if col in df.columns:
+                    df[col] = df[col] * scale
             current_price = float(df["close"].iloc[-1])
             previous_close = float(df["close"].iloc[-2]) if len(df) > 1 else current_price
+        else:
+            try:
+                info = tk.fast_info
+                current_price = float(info.get("last_price") or info.get("lastPrice") or df["close"].iloc[-1])
+                previous_close = float(info.get("previous_close") or info.get("previousClose") or df["close"].iloc[-2])
+            except Exception:
+                current_price = float(df["close"].iloc[-1])
+                previous_close = float(df["close"].iloc[-2]) if len(df) > 1 else current_price
         snap = _snapshot(df, current_price, previous_close)
         _save_cache(ticker, period, interval, df)
-        statuses.append({"provider": "yfinance", "status": "ok"})
+        status = "ok" if symbol == ticker else f"ok via {symbol}"
+        statuses.append({"provider": "yfinance", "status": status})
         return MarketData(
             ticker=ticker,
             bars=df,

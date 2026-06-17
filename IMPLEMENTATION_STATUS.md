@@ -4,7 +4,7 @@
 > meaningful change so a restarted terminal, rate-limit recovery, or new Codex
 > turn can resume quickly without losing context.
 
-Last updated: 2026-06-04 02:02 America/Chicago
+Last updated: 2026-06-09  America/Chicago
 
 ## Backup
 
@@ -19,8 +19,190 @@ Last updated: 2026-06-04 02:02 America/Chicago
 
 ## Active Objective
 
-Implement the first practical batch from `FUTURE_WORK.md` while preserving all
-existing dashboard, options, manual-trade, jobs, and watchlist behavior.
+Implement index-options-only Options Edge plus a broader stock-market prediction
+engine while preserving all existing dashboard, equity research, manual-trade,
+jobs, and watchlist behavior.
+
+## Completed (2026-06-09 index-options-only market engine batch)
+
+User asks: Options Edge should remove stock tickers and include only eligible
+index options; only consider long/short index-option ideas when the underlying
+forecast move is at least 50 points; add wars/oil/geopolitical/calendar context;
+pull Hacker News and Seeking Alpha Market News for the last two days.
+
+- Added canonical index-option universe: SPX, XSP, NDX, XND, RUT, VIX, DJX, OEX.
+- Added index assets to `config/watchlist.yml`; SPY/QQQ remain ETF market-regime
+  context rather than option-trade tickers.
+- Added yfinance index-level aliases (`SPX/XSP -> ^GSPC`, `NDX/XND -> ^NDX`,
+  `RUT -> ^RUT`, `VIX -> ^VIX`, `DJX -> ^DJI`, `OEX -> ^OEX`) while preserving
+  the displayed option ticker.
+- Options Edge and Trade Summary/Trade Strategy now promote option expiries only
+  for index-option underlyings; stock tickers remain research-only for options.
+- Added `MIN_INDEX_OPTION_MOVE_POINTS=50` and an options-expiry gate that converts
+  sub-threshold index-option setups to `NO TRADE`.
+- Added public last-two-day market-context news pulls for Hacker News RSS and
+  Seeking Alpha Market News RSS.
+- Added `analysis/stock_market_engine.py`, combining market regime, VIX, WTI oil,
+  dollar, global correlations, government/geopolitical/policy clues, scheduled
+  calendar risk, and market-wide news into `stock_market_engine`.
+- Surfaced the stock-market engine in `confidence_trace`, `trend_impact`, raw
+  signal JSON, and the Why Suggested tab.
+
+## Validation (2026-06-09 index-options batch)
+
+- Python compile check for changed modules — passed.
+- Focused options tests — passed: `tests/test_options_edge.py` 12 passed.
+- Full test suite — passed: 99 passed, 1 existing datetime deprecation warning.
+- Live source smoke check — passed:
+  - SPX/NDX/RUT/VIX market data resolved through yfinance index aliases.
+  - Hacker News RSS and Seeking Alpha Market News RSS returned last-two-day items.
+- Docker rebuild/restart — passed; `/health` returned `ok`.
+- Full Docker scan — passed:
+  - 54 predictions, 0 failed.
+  - 263 options-expiry snapshots, 263 option-chain snapshots, 263 IV snapshots.
+  - 1103 evidence snapshots.
+- Browser verification — passed:
+  - dashboard Overview has 54 rows.
+  - Options Edge title says `Index Options Edge`.
+  - Options Edge groups are exactly `DJX, NDX, OEX, RUT, SPX, VIX, XND, XSP`.
+  - No stock option contracts/buttons were present in Options Edge.
+  - Stock rows in Trade Summary say stock option trades are disabled.
+
+## Completed (2026-06-05 economic-event impact analysis)
+
+User asks: check whether the tool considers Economic Events; if not, add them
+to analysis and pull all possible details.
+
+- Existing validation: the project already had `ingestion/calendars.py`,
+  `config/event_calendar.yml`, `GET /calendar`, Jobs categories `macro` and
+  `official_economic`, and an engine-level high-impact event confidence haircut
+  for FOMC / non-farm payrolls / jobless claims / earnings.
+- **NEW `analysis/economic_events.py`** — converts scheduled events inside the
+  prediction horizon into a first-class impact object: event count,
+  high-impact count, risk score/level, channel (rates/labor/inflation/growth/
+  earnings IV-crush), directional effect, action preference, typical release
+  time, and confidence policy.
+- **`prediction/engine.py`** — every prediction now stores
+  `economic_event_impact`, copies it into `confidence_trace` and `trend_impact`,
+  appends it to verdict reasons, and adds explicit risk warnings when the
+  scheduled-event risk is high/extreme.
+- **`reports/generator.py`** — Trends & Impact has an Economic Events column;
+  Confidence Traces has an Economic Events column; Why Suggested shows the
+  full per-event impact list; CSV/Markdown exports carry the same summary.
+- **Docs/tests** — README and DATA_SOURCES updated; new
+  `tests/test_economic_event_impact.py` covers quiet and high-impact calendars.
+- **Validation:** targeted tests passed (`test_economic_event_impact`,
+  `test_calendars`, `test_global_and_advisor`, `test_options_edge`); Docker API
+  rebuilt/restarted and health is OK; full focused scan ran with 16 parallel
+  workers and completed **46 predictions / 0 failed**, writing fresh
+  `reports/2026-06-05/*`; all 46 signals have `economic_event_impact` in the
+  signal, confidence trace, and trend impact. Browser verified 46 Trends rows,
+  Economic Events columns in Trends/Confidence, and Why cards with the detailed
+  economic-event impact section.
+- **Reliability fix found during validation:** `EvidenceStore.add()` now
+  normalizes missing provider labels (`source_name`, `source_type`, `claim`) so
+  a single live feed omitting a source cannot fail a ticker after retries.
+
+## Completed (2026-06-04 5% profit-potential rule)
+
+- Replaced the prior absolute option-profit-points rule with a percent rule:
+  `MIN_OPTION_PROFIT_PCT=5`.
+- Trade Summary now expands only option expiries whose estimated option premium
+  gain is **at least 5%**. Below-threshold options stay out of the promoted
+  expandable expiry list, so weak low-move ideas do not look actionable.
+- Trade Strategy marks below-5% option premium potential as low-potential,
+  downgrades promoted action to watch/paper, and removes the Add-option button.
+- Profit Potential cells now display percent first, with points and
+  dollars/contract as context: e.g. `+12%` then `+0.35 pts · $+35/contract`.
+- Live-price refresh recalculates Profit Potential in-place using the same
+  percent threshold.
+
+## Completed (2026-06-04 STRICT expected-move / reward-risk candidate gate)
+
+User problem: bullish/bearish candidates were shown when current ≈ target
+(e.g. HPE 53.69→54.34, +1.2%). Must reject weak moves, never inflate targets,
+apply the SAME rule to every tab, and be resumable.
+
+- **NEW `analysis/candidate_gate.py`** — single source of truth. `final_required_points
+  = max(price×5%, 5 if price<100 else 10)`; VALID only if expected_points ≥
+  final_required_points AND expected_percent ≥ 5 AND reward/risk ≥ 2:1 AND tier
+  scores. Adds `rejected_insufficient_expected_move`. 9 tests.
+- **NEW `run_state.py`** → `data/run_state.json` resumable checkpoint (per-ticker,
+  atomic) + exponential backoff 30/60/120/300s. Wired into `pipeline.py`.
+- **`prediction/engine.py`** — `_canonical_target_stop` (profile-horizon forecast
+  target + 1.5×ATR technical stop); `predict()` runs the gate, OVERRIDES
+  final_verdict label/action, sets validation_status/target_price/stop_price/
+  expected_points/percent/final_required_points/reward_risk_ratio.
+- **`schemas.py`** — 9 new PredictionResult fields (candidate_gate + scalars).
+- **`reports/generator.py`** — `_bull_bear` is gate-aware (BULLISH/BEARISH only for
+  VALID; else WATCHLIST/REJECTED/NO TRADE); Bull/Bear Verdicts rebuilt to the
+  15-col strict-validation table; strategy tabs read authoritative target/stop;
+  CSV + Markdown carry validation fields.
+- **Validated:** 95 tests pass. Live: HPE/NVDA/MSFT/PLTR REJECTED on 5D; on the
+  20D profile WDC = VALID (20.7% move, R/R 2.68), MU REJECTED at R/R 1.96 (the
+  2:1 rule bites). Docs: CHANGELOG.md, VALIDATION_REPORT.md, RUNBOOK.md,
+  PENDING_ITEMS.md, DATA_SOURCES.md §5f.
+
+## Completed (2026-06-04 column consistency + clear notes + profit-potential filter)
+
+User asks: tables inconsistent — keep the same columns (Bull/Bear, Confidence,
+Volume, Verdict, Current, Target price, Target days) across relevant tabs; the
+trade note text is unclear (what's "current", where does it reach, by when); and
+a trade needs a minimum worthwhile move, previously defined as ≥10 option
+premium points and now superseded by the 5% rule above.
+
+- **Consistent columns** (`reports/generator.py`):
+  - **Bull/Bear Verdicts** tab rebuilt → Ticker, **Bull/Bear, Confidence, Current
+    price, Target price, Target days, Volume**, Final verdict, Research action,
+    Opp, Risk, Why.
+  - **Options Edge** → added **Target price** (forecast-derived) + **Target days**
+    (= DTE) columns after Underlying current (colspans bumped 30→32 / 31→33).
+  - **Trade Summary** → added **Volume** + **Profit potential** columns.
+  - **Trade Strategy** → added **Profit potential** column (already had the rest).
+- **Clear trade notes** — new `_clear_trade_note` replaces the cryptic
+  `key: value;` string in Trade Summary, Trade Strategy, and Options Edge. Now:
+  *"Underlying now $590.32 → target $606.26 (+2.7%) within ~8 session(s); stop
+  $555.25. Option … buy ~$37.70, exit ~$46.13 (+$8.43/sh = $843/contract, +22%),
+  stop $24.50. Research only."*
+- **Profit-potential filter** — originally used `min_option_profit_points` (env
+  `MIN_OPTION_PROFIT_POINTS`, default **10**) to show est. premium gain in
+  points/%/$/contract and flag trades below the threshold. Superseded on
+  2026-06-04 by `MIN_OPTION_PROFIT_PCT=5`.
+- All 4 trade tables verified column-consistent (header count == row count);
+  **86 tests pass**; validated via temp-file render (live report not overwritten).
+
+## Completed (2026-06-04 accuracy batch: market regime + factor coverage + target days + Bull/Bear)
+
+User asks addressed: validate Trade Summary; fix constant "Target days = 3";
+explain/raise low confidence (≤70) honestly; add Bull/Bear verdicts + columns to
+Trade Strategy/Options Edge; add sensitivity for down markets ("why is it down?").
+
+- **NEW `analysis/market_regime.py`** — shared risk-on/off read from SPY structure
+  + VIX + curve + global breadth, computed ONCE per scan in `pipeline.py` and passed
+  to `predict()`. Drives an honest **beta-sensitivity** confidence adjustment
+  (trim longs / confirm shorts in risk-off; never inflate a long into a falling
+  tape). Surfaced as a top-of-page **regime banner** and on
+  `PredictionResult.market_regime` + `confidence_trace.market_regime`.
+- **NEW `analysis/factor_coverage.py`** — maps each prediction onto the 23
+  `MARKET_FACTOR_CHECKLIST.md` groups; reports coverage %, missing groups, and a
+  **confidence ceiling**. This is the non-manipulative answer to "confidence never
+  tops ~70": coverage of live connectors bounds the ceiling. Shown in the
+  **Confidence Traces** tab (new "Factor coverage / ceiling" column + explainer).
+- **`analysis/scoring.py`** — `confidence_score` now rewards **directional
+  alignment** among factors that have data (instead of penalizing benign
+  cross-factor dispersion), then is capped by the coverage ceiling in the engine.
+  Legacy `opportunity=None` path preserved; all `test_scoring.py` cases still pass.
+- **`reports/generator.py`** — `_target_days` makes "Target days" per-ticker and
+  data-driven (option DTE for option plans; move/vol-scaled sessions for stock
+  plans; forecast-horizon fallback for tiny/neutral moves) — no longer a constant 3.
+  New `_bull_bear` consolidated verdict (driven by final direction + confidence)
+  added as a **Bull/Bear** column in Trade Summary + Trade Strategy and a badge on
+  Options Edge. New regime banner + `_coverage_cell`.
+- **`schemas.py`** — `PredictionResult.market_regime` + `.factor_coverage`.
+- **NEW tests** `test_market_regime.py`, `test_factor_coverage.py`.
+  Full suite green (**86+ passed**). Validated via a temp-file render (a 3–4 ticker
+  `run_pipeline` + `render_html` to `%TEMP%`) — the live 41-ticker report is NOT
+  overwritten by validation.
 
 ## Completed (2026-06-04 Semiconductor/storage ticker expansion)
 
@@ -533,4 +715,4 @@ data-lead-time (IV-Rank/scorecards need weeks of snapshots) or blocked on you
   risk gates, and outcome tracking.
 - Keep all existing functionality as-is unless a roadmap item requires an additive
   change.
-- Latest dashboard URL verified: `http://127.0.0.1:8000/dashboard?cb=roadmap-finish#overview`.
+- Latest dashboard URL verified: `http://127.0.0.1:8000/dashboard?cb=index-options#options`.

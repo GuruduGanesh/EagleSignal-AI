@@ -22,10 +22,12 @@ from .ingestion.macro_fred import MacroSnapshot, fetch_macro
 from .ingestion.market_data import fetch_history
 from .ingestion.options_chain import fetch_options
 from .ingestion.sec_edgar import SecData, fetch_sec
+from .analysis.market_regime import assess_market_regime
 from .manual_trading import mark_manual_trades
 from .paper_trading import update_paper_trades
 from .prediction.engine import predict
 from .reliability import apply_confidence_calibration
+from .run_state import backoff_seconds, new_run_state
 from .schemas import AssetEntity, AssetType, PredictionResult
 from .utils.evidence import EvidenceStore
 from .utils.logging import get_logger
@@ -44,6 +46,7 @@ class RunResult:
     strategy: str = "swing"
     horizon: str = "5D"
     snapshots: dict = field(default_factory=dict)
+    market_regime: dict = field(default_factory=dict)
 
 
 def run_pipeline(
@@ -86,8 +89,25 @@ def run_pipeline(
     global_index_bars = global_markets.bars_map() if global_markets.available else {}
     log.info("Global markets available=%s (%s indexes)", global_markets.available, len(global_index_bars))
 
+    # Shared market-regime read (risk-on/off) computed ONCE and reused by every
+    # ticker — answers "why is the whole market down?" + drives beta sensitivity.
+    market_regime = assess_market_regime(benchmark, macro, global_index_bars)
+    log.info("Market regime: %s (score %.0f, available=%s)",
+             market_regime.label, market_regime.score, market_regime.available)
+
     result = RunResult(evidence=store, macro=macro, government=gov,
-                       global_markets=global_markets, strategy=strategy, horizon=horizon)
+                       global_markets=global_markets, strategy=strategy, horizon=horizon,
+                       market_regime=market_regime.to_dict())
+
+    # Resumable checkpoint: run_state.json is updated after every ticker so a run
+    # interrupted by a rate limit / crash can be diagnosed + retried (failed list).
+    _now = lambda: datetime.utcnow().isoformat()  # noqa: E731
+    run_id = f"{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}-{strategy}-{horizon}"
+    run_state = new_run_state(
+        settings.data_dir, run_id=run_id, start_time=_now(),
+        tickers=[a.ticker for a in assets], strategy=strategy, horizon=horizon,
+    )
+    run_state.stage("analyze", _now())
 
     def analyze_asset(asset: AssetEntity) -> PredictionResult | None:
         max_attempts = max(1, settings.per_ticker_retries + 1)
@@ -101,6 +121,7 @@ def run_pipeline(
                         sleep(max(0.0, settings.per_ticker_retry_delay_seconds))
                         continue
                     log.warning("Skipping %s: insufficient bars after %d attempts", asset.ticker, max_attempts)
+                    run_state.mark_failed(asset.ticker, _now(), "insufficient bars")
                     return None
 
                 sec = fetch_sec(asset.ticker) if asset.asset_type == AssetType.equity else SecData(ticker=asset.ticker)
@@ -113,7 +134,7 @@ def run_pipeline(
                     asset.cik = sec.cik
                     asset.resolved = True
 
-                opt_enabled = asset.asset_type in (AssetType.equity, AssetType.etf)
+                opt_enabled = asset.asset_type in (AssetType.equity, AssetType.etf, AssetType.index)
                 chain = (
                     fetch_options(asset.ticker, market.last_close, min_days=settings.min_option_days_to_expiry)
                     if opt_enabled
@@ -124,15 +145,21 @@ def run_pipeline(
                     asset=asset, market=market, sec=sec, macro=macro,
                     options_chain=chain, benchmark=benchmark, store=store,
                     settings=settings, weights=weights, horizon=horizon, strategy=strategy,
-                    gov=gov, global_index_bars=global_index_bars,
+                    gov=gov, global_index_bars=global_index_bars, market_regime=market_regime,
                 )
+                run_state.mark_completed(asset.ticker, _now())
                 return pred
             except Exception as exc:  # one ticker's failure must not abort the whole run
                 if attempt < max_attempts:
-                    log.warning("Retrying %s after error on attempt %d/%d: %s", asset.ticker, attempt, max_attempts, exc)
-                    sleep(max(0.0, settings.per_ticker_retry_delay_seconds))
+                    # Exponential backoff (30/60/120/300s) for likely rate-limit /
+                    # transient provider errors so we don't hammer the source.
+                    wait = backoff_seconds(run_state.bump_retry(asset.ticker))
+                    log.warning("Retrying %s after error on attempt %d/%d in %.0fs: %s",
+                                asset.ticker, attempt, max_attempts, wait, exc)
+                    sleep(wait)
                     continue
                 log.warning("Skipping %s due to error after %d attempts: %s", asset.ticker, max_attempts, exc)
+                run_state.mark_failed(asset.ticker, _now(), str(exc))
                 return None
         return None
 
@@ -154,7 +181,16 @@ def run_pipeline(
     result.predictions.sort(key=lambda p: p.opportunity_score, reverse=True)
     update_paper_trades(result.predictions, settings.data_dir)
     mark_manual_trades(result.predictions, settings.data_dir)
+    run_state.stage("report", _now())
     snapshot_summary = persist_run_snapshots(result, settings)
     result.snapshots = {**result.snapshots, **snapshot_summary}
-    log.info("Pipeline complete: %d predictions", len(result.predictions))
+    run_state.finish(_now())
+    result.snapshots["run_state"] = {
+        "run_id": run_id,
+        "completed": len(run_state.completed_tickers),
+        "failed": run_state.failed_tickers,
+        "path": str(run_state.path),
+    }
+    log.info("Pipeline complete: %d predictions (%d failed: %s)",
+             len(result.predictions), len(run_state.failed_tickers), run_state.failed_tickers)
     return result

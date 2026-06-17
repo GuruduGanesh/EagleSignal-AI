@@ -13,15 +13,23 @@ import pandas as pd
 from .. import __version__
 from ..analysis import scoring
 from ..analysis.cross_market import cross_market_signal
+from ..analysis.economic_events import analyze_economic_event_impact
 from ..analysis.event_radar import detect_event_radar
 from ..analysis.forecast import forecast_signal
 from ..analysis.global_correlation import global_correlations
 from ..analysis.impact import map_impacts
+from types import SimpleNamespace as _CoverageView
+
+from ..analysis.candidate_gate import evaluate_candidate
+from ..analysis.factor_coverage import audit_factor_coverage
 from ..analysis.fundamentals import fundamental_signal
+from ..analysis.index_options import is_index_option_asset
 from ..analysis.macro import macro_signal
+from ..analysis.market_regime import MarketRegime, assess_market_regime, beta_sensitivity
 from ..analysis.options import OptionsAnalytics, analyze_expiries, analyze_options
 from ..analysis.patterns import pattern_bias
 from ..analysis.sentiment import sentiment_signal
+from ..analysis.stock_market_engine import predict_stock_market
 from ..analysis.technical import atr, price_volume_signal, technical_signal
 from ..config import Settings
 from ..historical_store import iv_rank_metrics, load_option_contract_history
@@ -43,6 +51,42 @@ from ..schemas import (
     Severity,
 )
 from ..utils.evidence import EvidenceStore
+
+
+def _canonical_target_stop(current, direction, forecast, short_forecasts, atr_value=None):
+    """Canonical analysis-derived target & stop. Returns (target_price, stop_price).
+
+    * Target: the PROFILE-horizon forecast (5D swing / 20D long / 1D intraday)
+      median move — appropriate to the holding period — falling back to the 3D
+      short forecast. Never fabricated; from the Monte-Carlo forecast on REAL
+      returns.
+    * Stop: a standard **1.5×ATR(14) technical invalidation** (clipped to
+      [2.5%, 10%] of price), so reward/risk reflects a realistic stop rather than
+      an arbitrarily wide band. Falls back to the forecast p05 band if ATR is
+      unavailable.
+    (None, None) if no forecast is available.
+    """
+    if current is None:
+        return (None, None)
+    f = forecast if (forecast and getattr(forecast, "available", False)) else (short_forecasts or {}).get("3D")
+    if not f or not getattr(f, "available", False):
+        return (None, None)
+    ret = getattr(f, "expected_return_pct", None)
+    if ret is None:
+        return (None, None)
+    p05 = getattr(f, "p05_return_pct", None)
+    bearish = direction in (Direction.bearish, Direction.neutral_to_bearish)
+    # Side-align: a short/put thesis targets a move DOWN.
+    if bearish and ret > 0:
+        ret = -ret
+    target = current * (1 + ret / 100.0)
+    if atr_value and atr_value > 0:
+        risk_dist = min(max(1.5 * float(atr_value), current * 0.025), current * 0.10)
+    else:
+        downside = abs(p05 or 0) / 100 * 0.75 if p05 is not None else 0.045
+        risk_dist = current * min(max(downside, 0.035), 0.095)
+    stop = current + risk_dist if bearish else current - risk_dist
+    return (round(target, 4), round(stop, 4))
 
 
 def _severity(opportunity: float, confidence: float, risk, threshold: int) -> Severity:
@@ -253,6 +297,7 @@ def predict(
     strategy: str = "swing",
     gov: Optional[GovSnapshot] = None,
     global_index_bars: Optional[dict] = None,
+    market_regime: Optional[MarketRegime] = None,
 ) -> PredictionResult:
     df = market.bars
     horizon_days = {"intraday": 1, "1D": 1, "5D": 5, "20D": 20}.get(horizon, 5)
@@ -302,13 +347,14 @@ def predict(
     policy_impacts: list[str] = []
     for imp in impacts:
         ev_obj = imp.event
+        ev_source = ev_obj.source or ev_obj.kind or "government"
         store.add(
-            entity=asset.ticker, source_name=ev_obj.source, source_type="official",
+            entity=asset.ticker, source_name=ev_source, source_type="official",
             claim=ev_obj.title, url=ev_obj.url, published_at=ev_obj.published_at,
             polarity=imp.polarity, data_type="news",
         )
         tag = "direct" if imp.match_kind == "direct" else imp.match_kind
-        policy_impacts.append(f"[{ev_obj.kind}/{tag}] {ev_obj.source}: {ev_obj.title[:110]}")
+        policy_impacts.append(f"[{ev_obj.kind}/{tag}] {ev_source}: {ev_obj.title[:110]}")
 
     components = [tech, pv, fund, opt_comp, mac, sent, xmkt]
     if fcomp is not None:
@@ -370,6 +416,52 @@ def predict(
             + " — inside the horizon; confidence reduced (expect a more binary move)."
         )
 
+    # --- market-regime sensitivity (§ "why are markets down" + sensitivity) ---
+    # The broad risk-on/risk-off tape is shared by every ticker. In a risk-off
+    # tape, single-name longs face a headwind, so we HONESTLY trim conviction
+    # (and confirm shorts/puts). Never inflate a long into a falling market.
+    regime = market_regime or assess_market_regime(benchmark, macro, global_index_bars)
+    regime_mult, regime_note = beta_sensitivity(regime, direction.value)
+    if regime_mult != 1.0 and direction != Direction.avoid:
+        conf = round(conf * regime_mult, 1)
+    if regime_note:
+        if regime.risk_off and direction in (Direction.bullish, Direction.neutral_to_bullish):
+            risk_decision.warnings.append(regime_note)
+        verdict_regime_note = regime_note
+    else:
+        verdict_regime_note = None
+
+    economic_event_impact = analyze_economic_event_impact(
+        horizon_events,
+        direction=direction.value,
+        horizon_days=horizon_days,
+        market_regime=regime.to_dict(),
+        macro_values=macro.values if macro and macro.available else {},
+    )
+    if economic_event_impact.get("risk_level") in ("high", "extreme"):
+        risk_decision.warnings.append(economic_event_impact.get("summary", "High scheduled economic-event risk."))
+    stock_market_engine = predict_stock_market(
+        market_regime=regime.to_dict(),
+        macro_values=macro.values if macro and macro.available else {},
+        gov_events=gov.events if gov and gov.available else [],
+        global_correlations=g_corr,
+        economic_event_impact=economic_event_impact,
+        news_providers=news.providers,
+        news_items=len(news.items),
+    )
+    sm_dir = str(stock_market_engine.get("direction") or "")
+    if is_index_option_asset(asset) and direction != Direction.avoid:
+        if sm_dir in ("risk_off", "cautious_risk_off") and direction in (Direction.bullish, Direction.neutral_to_bullish):
+            conf = round(conf * 0.9, 1)
+            risk_decision.warnings.append("Stock-market engine is risk-off; bullish index option confidence trimmed.")
+        elif sm_dir in ("risk_on", "constructive") and direction in (Direction.bearish, Direction.neutral_to_bearish):
+            conf = round(conf * 0.9, 1)
+            risk_decision.warnings.append("Stock-market engine is constructive; bearish index option confidence trimmed.")
+        elif (sm_dir in ("risk_off", "cautious_risk_off") and direction in (Direction.bearish, Direction.neutral_to_bearish)) or (
+            sm_dir in ("risk_on", "constructive") and direction in (Direction.bullish, Direction.neutral_to_bullish)
+        ):
+            conf = round(min(100.0, conf * 1.03), 1)
+
     # --- evidence references for the memo ----------------------------------
     ev = store.for_entity(asset.ticker)
     bull = [e.evidence_id for e in ev if e.polarity > 0.1][:5]
@@ -419,6 +511,13 @@ def predict(
         trend_parts.append(f"P(up) {forecast.prob_up:.0%}")
     if policy_impacts:
         trend_parts.append(f"{len(policy_impacts)} policy link(s)")
+    if economic_event_impact.get("event_count"):
+        trend_parts.append(
+            f"economic events {economic_event_impact.get('risk_level')} "
+            f"({economic_event_impact.get('high_impact_count', 0)} high-impact)"
+        )
+    if stock_market_engine.get("summary") and is_index_option_asset(asset):
+        trend_parts.append(str(stock_market_engine.get("direction", "market")).replace("_", " "))
     trend_summary = " · ".join(trend_parts)
     event_radar = detect_event_radar(df, news_items=len(news.items), policy_links=len(policy_impacts))
     final_label = direction.value
@@ -463,6 +562,12 @@ def predict(
         verdict_reasons.insert(0, "bearish pressure is not strong enough for a full bearish score, but deserves short/put research")
     if event_notes:
         verdict_reasons.append("scheduled event risk inside horizon: " + "; ".join(event_notes))
+    if economic_event_impact.get("event_count"):
+        verdict_reasons.append("economic event impact: " + economic_event_impact.get("summary", "scheduled event watch"))
+    if is_index_option_asset(asset) and stock_market_engine.get("summary"):
+        verdict_reasons.append("stock-market engine: " + stock_market_engine.get("summary", "broad-market context")[:120])
+    if verdict_regime_note:
+        verdict_reasons.append(verdict_regime_note)
     source_links = [e.url for e in ev if e.url][:10]
     option_direction = Direction.neutral_to_bearish if final_label == "bearish_watch_candidate" else direction
     algo_inputs = {
@@ -530,6 +635,11 @@ def predict(
             "days_to_earnings": earnings.days_to_earnings,
             "next_earnings_date": earnings.next_earnings_date,
             "min_days_to_expiry": settings.min_option_days_to_expiry,
+            "is_index_option": is_index_option_asset(asset),
+            "expected_points": abs(float(forecast.expected_return_pct or 0.0) / 100.0 * float(market.current_price or market.last_close))
+            if forecast and forecast.expected_return_pct is not None and (market.current_price or market.last_close) else None,
+            "min_index_option_move_points": settings.min_index_option_move_points,
+            "stock_market_engine": stock_market_engine,
         },
         top_n=10,
     )
@@ -551,12 +661,67 @@ def predict(
         direction.value, data_quality, conviction,
     )
     conf_trace["event_calendar"] = [e.to_dict() for e in horizon_events[:6]]
+    conf_trace["economic_event_impact"] = economic_event_impact
     conf_trace["event_risk_applied"] = bool(high_impact_events) and direction != Direction.avoid
     if conf_trace["event_risk_applied"]:
         conf_trace["event_risk_note"] = (
             "High-impact scheduled event inside the horizon — confidence multiplied by 0.85 "
             "to reflect the more binary outcome."
         )
+    conf_trace["market_regime"] = regime.to_dict()
+    conf_trace["stock_market_engine"] = stock_market_engine
+    if regime_mult != 1.0:
+        conf_trace["regime_adjustment"] = {"multiplier": regime_mult, "note": regime_note}
+
+    # --- factor-coverage ceiling (honest answer to "confidence never tops 70") --
+    # Confidence cannot exceed what the available real data supports. The auditor
+    # maps this prediction onto the 23 checklist groups and derives the ceiling.
+    coverage = audit_factor_coverage(
+        _CoverageView(
+            component_scores={c.name: round(c.score, 1) for c in components},
+            missing_data=missing,
+            data_freshness=freshness,
+            confidence_trace=conf_trace,
+            options_trade_idea=options_idea,
+            policy_impacts=policy_impacts,
+            global_correlations=g_corr,
+            confidence_score=conf,
+        )
+    )
+    ceiling = float(coverage.get("confidence_ceiling") or 100.0)
+    if direction not in (Direction.avoid, Direction.neutral) and conf > ceiling:
+        conf = round(ceiling, 1)
+    conf_trace["confidence_ceiling"] = coverage.get("confidence_ceiling")
+    conf_trace["ceiling_reason"] = coverage.get("ceiling_reason")
+    conf_trace["factor_coverage_pct"] = coverage.get("coverage_pct")
+
+    # --- STRICT expected-move / reward-risk candidate gate (single source of truth) ---
+    # Compute the canonical target & stop (same forecast the strategy tabs use),
+    # then DOWNGRADE any "candidate" whose honest move is too small or whose
+    # reward/risk is too thin. Targets are never inflated to pass.
+    cur_price = market.current_price or market.last_close
+    try:
+        _atr_val = float(atr(df).dropna().iloc[-1])
+    except Exception:
+        _atr_val = None
+    cg_target, cg_stop = _canonical_target_stop(cur_price, direction, forecast, short_horizon_forecasts, _atr_val)
+    gate = evaluate_candidate(
+        direction=direction.value,
+        current_price=cur_price,
+        target_price=cg_target,
+        stop_price=cg_stop,
+        opportunity_score=opp_adj,
+        confidence_score=conf,
+        risk_score=risk_decision.risk_score,
+        has_catalyst=bool(catalysts),
+        blocked=bool(risk_decision.block_trade) or direction == Direction.avoid,
+    )
+    # The gate is authoritative for the displayed verdict + research action.
+    final_label = gate.final_label
+    if gate.rejected_reason:
+        verdict_reasons.insert(0, f"[{gate.validation_status}] {gate.rejected_reason}")
+    research_action = gate.research_action
+    conf_trace["candidate_gate"] = gate.to_dict()
 
     return PredictionResult(
         prediction_id=str(uuid.uuid4()),
@@ -605,19 +770,31 @@ def predict(
                 short_horizon_forecasts["3D"].expected_return_pct
                 if "3D" in short_horizon_forecasts else None
             ),
+            "economic_event_impact": economic_event_impact,
+            "stock_market_engine": stock_market_engine,
             "summary": trend_summary,
         },
         event_radar=event_radar,
+        economic_event_impact=economic_event_impact,
         final_verdict={
             "label": final_label,
-            "research_action": (
-                "research_long_setup" if final_label == "bullish_research_candidate"
-                else "research_short_or_put_setup" if final_label in ("bearish_or_short_research_candidate", "bearish_watch_candidate")
-                else "wait_or_avoid" if final_label == "avoid_for_now"
-                else "watch_only"
-            ),
+            "research_action": research_action,
+            "validation_status": gate.validation_status,
+            "rejected_reason": gate.rejected_reason,
             "reasons": verdict_reasons[:6],
         },
+        candidate_gate=gate.to_dict(),
+        target_price=gate.target_price,
+        stop_price=gate.stop_price,
+        expected_points=round(gate.expected_points, 2) if gate.expected_points is not None else None,
+        expected_percent=round(gate.expected_percent, 2) if gate.expected_percent is not None else None,
+        final_required_points=round(gate.final_required_points, 2) if gate.final_required_points is not None else None,
+        reward_risk_ratio=round(gate.reward_risk_ratio, 2) if gate.reward_risk_ratio is not None else None,
+        validation_status=gate.validation_status,
+        rejected_reason=gate.rejected_reason,
+        market_regime=regime.to_dict(),
+        stock_market_engine=stock_market_engine,
+        factor_coverage=coverage,
         global_correlations=g_corr,
         invalidation_conditions=_invalidation(df, direction),
         risk=risk_decision,

@@ -7,6 +7,8 @@ feed so a single outlet can't dominate sentiment:
 * Finnhub company news (FINNHUB_API_KEY)— company-tagged headlines
 * Google News RSS      (keyless)        — top-source aggregator (publisher-attributed)
 * Yahoo Finance RSS    (keyless)        — quote-page headline feed
+* Hacker News RSS      (keyless)        — tech/AI/semis/geopolitical clue stream
+* Seeking Alpha Market News RSS (keyless)— market-wide breaking news
 * GDELT DOC 2.0        (keyless)        — broad global news/event coverage
 * yfinance headlines   (keyless)        — quote-page company headlines
 * StockTwits stream    (keyless)        — exchange-tagged retail news/links
@@ -26,6 +28,7 @@ from typing import Optional
 from xml.etree import ElementTree as ET
 
 from ..config import get_settings
+from ..analysis.index_options import is_index_option_ticker
 from ..utils.logging import get_logger
 
 log = get_logger("ingestion.news")
@@ -161,6 +164,65 @@ def _from_yahoo_rss(ticker: str) -> list[NewsItem]:
     if resp is None or resp.status_code != 200:
         return []
     return _parse_rss(resp.text, "Yahoo Finance", "news")[:15]
+
+
+def _last_n_days(items: list[NewsItem], days: int = 2) -> list[NewsItem]:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    return [
+        item for item in items
+        if item.published_at is None or item.published_at >= cutoff
+    ]
+
+
+_MARKET_CLUE_TERMS = (
+    "stock", "market", "nasdaq", "s&p", "dow", "fed", "rates", "jobs", "inflation",
+    "tariff", "sanction", "oil", "war", "israel", "iran", "russia", "ukraine",
+    "china", "taiwan", "chip", "semiconductor", "ai", "gpu", "data center",
+    "nvidia", "amd", "intel", "microsoft", "amazon", "google", "meta", "apple",
+)
+
+
+def _market_relevant(items: list[NewsItem]) -> list[NewsItem]:
+    out = []
+    for item in items:
+        title = item.title.lower()
+        if any(term in title for term in _MARKET_CLUE_TERMS):
+            out.append(item)
+    return out
+
+
+def _is_market_context(ticker: str, company_name: str | None = None) -> bool:
+    t = ticker.upper()
+    name = (company_name or "").lower()
+    return (
+        is_index_option_ticker(t)
+        or t in {"SPY", "QQQ", "DIA", "IWM"}
+        or "index" in name
+        or "s&p" in name
+        or "nasdaq" in name
+        or "russell" in name
+        or "dow jones" in name
+    )
+
+
+def _from_hacker_news_market(days: int = 2) -> list[NewsItem]:
+    """Hacker News front-page RSS, filtered to recent market/tech catalyst clues."""
+    from .http_util import throttled_get
+
+    resp = throttled_get("hacker_news", "https://news.ycombinator.com/rss", min_interval=1.0, timeout=12)
+    if resp is None or resp.status_code != 200:
+        return []
+    return _market_relevant(_last_n_days(_parse_rss(resp.text, "Hacker News", "aggregator"), days))[:20]
+
+
+def _from_seeking_alpha_market_news(days: int = 2) -> list[NewsItem]:
+    """Seeking Alpha market-news RSS — public market-wide headlines only."""
+    from .http_util import throttled_get
+
+    resp = throttled_get("seeking_alpha_market", "https://seekingalpha.com/market-news.xml", min_interval=1.0, timeout=12)
+    if resp is None or resp.status_code != 200:
+        return []
+    return _last_n_days(_parse_rss(resp.text, "Seeking Alpha Market News", "news"), days)[:25]
 
 
 def _from_finnhub_news(ticker: str, api_key: str) -> list[NewsItem]:
@@ -351,6 +413,9 @@ def _fetch_news_uncached(ticker: str, company_name: str | None = None) -> NewsRe
         collected.append(("finnhub", _from_finnhub_news(ticker, settings.finnhub_api_key)))
     collected.append(("google_news", _from_google_news(ticker, company_name)))
     collected.append(("yahoo_rss", _from_yahoo_rss(ticker)))
+    if _is_market_context(ticker, company_name):
+        collected.append(("hacker_news_2d", _from_hacker_news_market(days=2)))
+        collected.append(("seeking_alpha_market_2d", _from_seeking_alpha_market_news(days=2)))
     collected.append(("gdelt", _from_gdelt(ticker, company_name)))
     collected.append(("yfinance", _from_yfinance(ticker)))
     if settings.x_bearer_token:

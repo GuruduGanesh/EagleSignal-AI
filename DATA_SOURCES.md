@@ -117,6 +117,8 @@ Implemented multi-source merge (deduped by normalized title, newest first):
 - Finnhub company news (when `FINNHUB_API_KEY` is set) — company-tagged headlines
 - Google News RSS (keyless) — top-source aggregator, originating publisher attributed
 - Yahoo Finance RSS (keyless) — per-symbol headline feed
+- Hacker News RSS (keyless) — market-relevant tech/AI/chips/geopolitical clues from the last two days, used for market/index context
+- Seeking Alpha Market News RSS (keyless public feed) — market-wide headlines from the last two days, used for market/index context
 - GDELT DOC 2.0 (keyless, throttled to one request / 5s) — broad global news/events
 - Direct White House presidential-actions RSS feed, Federal Register presidential documents, and GDELT policy/admin queries for Trump administration, White House, executive orders, tariffs, export controls, DOJ/FTC/FDA/DoD, AI/data-center policy
 - Event Radar uses only real historical bars from the market-data provider chain. It does not fabricate SNDK-style moves; it detects acceleration, volume expansion, catalyst density, drawdown, and exhaustion from downloaded data.
@@ -128,9 +130,9 @@ controls, and no private or non-public (insider) sources — prohibited by law a
 SKILL-134. Also available as design references: company IR RSS, SerpAPI / Brave /
 Tavily / Marketaux / FMP if licensed (`MARKETAUX_API_KEY`, `FMP_API_KEY`).
 Reuters, Bloomberg, CNBC, MarketWatch, WSJ/Barron's, The Fly, Benzinga Pro,
-Briefing.com, and Seeking Alpha are valuable news-flow/reference sources, but
-paid/paywalled sources must only be used through licensed access. Rumors and
-opinion sources are context-only until confirmed.
+Briefing.com, and Seeking Alpha article pages are valuable news-flow/reference
+sources, but paid/paywalled sources must only be used through licensed access.
+Rumors and opinion sources are context-only until confirmed.
 
 Rules:
 
@@ -227,6 +229,12 @@ yfinance option_chain  ->  CBOE delayed-quotes JSON (keyless)  ->  unavailable
   **minimum 5 DTE**, preferring the 5–60 day window) and pull full calls/puts for
   each. `MIN_OPTION_DAYS_TO_EXPIRY` controls the floor; recommendation scoring
   never falls back below it.
+- Options Edge trade recommendations are restricted to eligible index options
+  only: SPX, XSP, NDX, XND, RUT, VIX, DJX, and OEX. Stock/equity tickers can still
+  be researched in other tabs, but their option contracts are not promoted for
+  trading. `MIN_INDEX_OPTION_MOVE_POINTS` defaults to 50 and blocks directional
+  index-option ideas when the forecasted underlying index move is below that
+  point threshold.
 - `yfinance` is primary. If it returns nothing, the **CBOE delayed-quotes JSON**
   (`https://cdn.cboe.com/api/global/delayed_quotes/options/<SYM>.json`, keyless) is
   parsed and reshaped into the same calls/puts frames so the engine is
@@ -383,9 +391,68 @@ horizon reduces confidence — see "measured, not guessed"):
 - **Company calendar:** next earnings date per ticker, pulled live (keyless) from the
   earnings connector and also surfaced per-prediction on
   `options_trade_idea.earnings`.
+- **Economic-event impact analysis:** `analysis/economic_events.py` turns the raw
+  calendar into a per-ticker `economic_event_impact` object with risk score/level,
+  event count, high-impact count, market channel (rates, labor, inflation, growth,
+  earnings/IV-crush), directional effect, action preference (normal process,
+  smaller size/confirm after release, or defined-risk options/wait), and the
+  confidence policy used by the engine. This is written to `PredictionResult`,
+  `confidence_trace.economic_event_impact`, `trend_impact.economic_event_impact`,
+  JSON, CSV, Markdown, and the dashboard Trends / Confidence / Why views.
+- **Official curated macro dates to add when confirmed:** CPI/PPI and Employment
+  Situation from BLS, Personal Income & Outlays/PCE and GDP from BEA, retail sales,
+  durable goods, construction, trade/inventories, and housing indicators from
+  Census / Commerce, ISM PMI from ISM, Treasury refunding/auction calendars from
+  Treasury, and Fed speakers/minutes from the Federal Reserve. Use official agency
+  schedules first; TradingView/Investing.com/MarketWatch are monitoring dashboards,
+  not the source of truth for final confidence.
 
 API: `GET /calendar?days=21` (instant, market/macro only) and
 `GET /calendar?days=21&include_earnings=true` (adds live per-ticker earnings; slower).
+
+## 5e. Market regime + factor coverage (accuracy, "why is the market down?")
+
+Two engine features make predictions *measured, not guessed* and explain the
+confidence numbers honestly:
+
+- **Market regime (`analysis/market_regime.py`):** computed ONCE per scan from
+  real data — SPY price structure (vs 20/50-day averages, 5-/20-day change), the
+  **VIX** level, the yield curve, and a global-breadth proxy — and shared by every
+  ticker. It produces a risk-on…risk-off label, a 0–100 score, and plain-English
+  drivers shown in the top-of-page **regime banner** (this is the "why is the whole
+  market down today?" read). It then applies an honest **beta-sensitivity**
+  adjustment: in a risk-off tape, single-name *long* confidence is trimmed and a
+  tighter stop is advised, while *short/put* theses are mildly confirmed. The broad
+  tape never invents direction — it only down-weights conviction when it fights the
+  single-name read. Surfaced on `PredictionResult.market_regime` and
+  `confidence_trace.market_regime`.
+- **Factor coverage + confidence ceiling (`analysis/factor_coverage.py`):** every
+  prediction is mapped onto the 23 groups of `MARKET_FACTOR_CHECKLIST.md`. The
+  auditor reports `factor_coverage` / `missing_factor_groups`, a coverage %, and a
+  **confidence ceiling** — the highest confidence the available real data can
+  justify. This is the non-manipulative answer to "why does confidence rarely top
+  ~70?": the system only has live connectors for a subset of the 23 groups, so the
+  ceiling is bounded by coverage. Adding the missing feeds (earnings transcripts,
+  analyst revisions, 13F/institutional flows, alternative data, sector relative
+  strength, a black-swan detector) is what *raises* the ceiling — never a formula
+  tweak. Confidence itself now rewards **directional alignment** among the factors
+  that have data (rather than penalizing benign cross-factor dispersion), then is
+  capped by the ceiling. Both are shown in the **Confidence Traces** tab.
+
+## 5f. Strict candidate gate + resumable run state
+
+- **Candidate gate (`analysis/candidate_gate.py`):** the single source of truth
+  that decides whether a ticker may be called a bullish/bearish RESEARCH
+  candidate. It enforces `expected_points ≥ max(price×5%, 5 if price<100 else 10)`
+  AND `expected_percent ≥ 5%` AND `reward/risk ≥ 2:1` (plus score tiers). The
+  target is derived from the **profile-horizon Monte-Carlo forecast on real
+  returns** — never fabricated; weak setups are rejected, not inflated. Computed
+  once in `predict()` and read by every tab/CSV/JSON/Markdown. See
+  `VALIDATION_REPORT.md` for the formulas and worked examples.
+- **Run state (`run_state.py` → `data/run_state.json`):** resumable checkpoint
+  written after every ticker (atomic), tracking run_id, stage, completed/failed/
+  pending tickers, retry counts, and errors. Per-ticker exception retries use an
+  exponential backoff (30/60/120/300s). See `RUNBOOK.md` for resume steps.
 
 ## 6. Data Freshness SLA
 

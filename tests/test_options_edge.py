@@ -365,3 +365,46 @@ def test_options_skew_term_unusual_activity_and_oi_change_are_reported():
     assert first["unusual_activity_score"] >= 50
     assert first["oi_change"] == 20
     assert any("chain-derived unusual activity" in reason for reason in first["reasons"])
+
+
+def test_index_options_require_50_point_expected_move():
+    ideas = analyze_expiries(
+        _chain(ticker="SPX", contract_root="SPX", spot=6000.0, strike=6000.0, call_price=35.0, bid=34.8, ask=35.2),
+        {
+            "direction": "up",
+            "conviction": 1.0,
+            "data_quality": 95,
+            "algo_confluence": 5,
+            "risk_score": 35,
+            "realized_vol_20d": 18,
+            "is_index_option": True,
+            "expected_points": 42.0,
+            "min_index_option_move_points": 50.0,
+        },
+    )
+
+    top = ideas[0]
+    assert top["action"] == "NO TRADE"
+    assert top["direction"] == "up"
+    assert top["reference_contract"]
+    assert top["reference_option_price"] == 35.0
+    assert any("50-point minimum" in reason for reason in top["reasons"])
+
+
+def test_index_options_allow_50_plus_point_expected_move():
+    ideas = analyze_expiries(
+        _chain(ticker="SPX", contract_root="SPX", spot=6000.0, strike=6000.0, call_price=35.0, bid=34.8, ask=35.2),
+        {
+            "direction": "up",
+            "conviction": 1.0,
+            "data_quality": 95,
+            "algo_confluence": 5,
+            "risk_score": 35,
+            "realized_vol_20d": 18,
+            "is_index_option": True,
+            "expected_points": 55.0,
+            "min_index_option_move_points": 50.0,
+        },
+    )
+
+    assert ideas[0]["action"] == "BUY CALL"

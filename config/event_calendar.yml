@@ -9,6 +9,10 @@
 # (federalreserve.gov/monetarypolicy/fomccalendars.htm).
 #
 # impact: high | medium | low   (drives event-risk gating in the engine)
+# Supported curated kinds include fomc, cpi, ppi, pce, gdp, retail_sales,
+# ism_pmi, treasury_refunding, fed_minutes, fed_speech, and any other official
+# date you want scored. Rule-derived NFP/jobless-claims and live earnings do not
+# need to be listed here. Add source/url fields when available for traceability.
 
 events:
   # ---- 2026 FOMC decision days (rate decision = 2nd meeting day, ET) --------

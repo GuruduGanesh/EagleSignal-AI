@@ -49,6 +49,7 @@ and its sub-7-DTE penalty is too soft.
 | 1.6 | **Premium-selling strategies** (credit spreads, covered calls) for high-IV/low-move names like AMAT | M | ✅ DONE | Rich-IV setups now surface a bull-put / bear-call **credit spread** (and an iron condor for neutral high-IV) as the preferred structure over buying premium. |
 | 1.7 | **Richer multi-leg structures** (verticals beyond debit, iron condors) with max-gain/loss/breakeven | M | ✅ DONE | Spreads now carry est. net debit/credit, max gain, max loss, and breakeven; iron condor added for neutral high-IV. Values are 1σ-width estimates, not live multi-leg quotes. |
 | 1.8 | **Skew, term structure, chain-derived UOA, and OI-change** | M | ✅ DONE ⏳ | Options Edge now computes ATM IV skew, next-expiry IV slope, chain-derived unusual-activity score, and exact-contract OI change from stored snapshots. Needs accumulated scans; paid institutional unusual-flow/gamma feeds remain future upgrades. |
+| 1.9 | **Index-options-only execution lane** | S | ✅ DONE | Options Edge/strategy promotion now only shows SPX, XSP, NDX, XND, RUT, VIX, DJX, and OEX; equity options remain disabled for trade recommendations. Index-option ideas also require `MIN_INDEX_OPTION_MOVE_POINTS=50` by default. |
 
 ---
 
@@ -63,6 +64,7 @@ and its sub-7-DTE penalty is too soft.
 | 2.4 | **Tune the non-price engines** (fundamentals/options/macro/sentiment) | L | 🟡⏳ | Feature rows now persist; tuning still needs enough matured labels plus no-lookahead calibration tests. |
 | 2.5 | **Full-prediction backtest + accuracy scorecard** (not just technical) | L | 🟡⏳ | Equity/options scorecard endpoints are live and data-dependent; full walk-forward multi-factor calibration and GPU ML promotion gates remain. |
 | 2.6 | **Event-aware confidence** — reduce/flag confidence near high-impact scheduled events (FOMC/jobs/CPI/earnings) | M | ✅ DONE | New `ingestion/calendars.py` (FOMC + rule-based macro + earnings); engine applies a 0.85 confidence haircut + event-risk warning + invalidation when a high-impact event falls inside the horizon. Surfaced in `confidence_trace.event_calendar` and `/calendar`. |
+| 2.7 | **Broad stock-market prediction engine** | M | ✅ DONE | `analysis/stock_market_engine.py` combines market regime, VIX, WTI oil, dollar, global correlations, government/policy/geopolitical clues, scheduled calendar risk, and market-wide HN/Seeking Alpha headlines into one traceable broad-tape score. |
 
 ---
 

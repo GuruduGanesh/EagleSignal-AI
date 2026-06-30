@@ -165,6 +165,45 @@ def refresh_news(settings: Settings) -> dict[str, Any]:
     }
 
 
+def refresh_seekingalpha(settings: Settings) -> dict[str, Any]:
+    """Seeking Alpha official public RSS — market-news + latest-articles feeds.
+
+    A dedicated manual-pull job so the user can refresh Seeking Alpha any time
+    from the Jobs tab. Public feeds only — no HTML scraping or paywall/login
+    bypass."""
+    from .ingestion.news import (
+        _from_seeking_alpha_latest_articles,
+        _from_seeking_alpha_market_news,
+    )
+
+    hours = int(getattr(settings, "news_max_age_hours", 24) or 24)
+    market = _from_seeking_alpha_market_news(days=2)
+    articles = _from_seeking_alpha_latest_articles("MARKET", None, hours=max(hours, 48), market_context=True)
+    items = list(market) + list(articles)
+    latest = None
+    headlines: list[dict] = []
+    for it in items:
+        pub = getattr(it, "published_at", None)
+        if pub and (latest is None or pub > latest):
+            latest = pub
+        headlines.append({
+            "title": getattr(it, "title", "")[:140],
+            "source": getattr(it, "source", "Seeking Alpha"),
+            "published_at": pub.isoformat() if pub else None,
+            "url": getattr(it, "url", ""),
+        })
+    headlines.sort(key=lambda h: h["published_at"] or "", reverse=True)
+    return {
+        "category": "seekingalpha",
+        "market_news_items": len(market),
+        "latest_article_items": len(articles),
+        "total_items": len(items),
+        "feeds": ["seekingalpha.com/market-news.xml", "seekingalpha.com/feed.xml"],
+        "latest_published": latest.isoformat() if latest else None,
+        "headlines": headlines[:20],
+    }
+
+
 def refresh_social(settings: Settings) -> dict[str, Any]:
     from .ingestion.social import fetch_social
 
@@ -456,6 +495,7 @@ def refresh_source_registry(settings: Settings) -> dict[str, Any]:
 CATEGORY_JOBS: dict[str, Callable[[Settings], dict[str, Any]]] = {
     "market": refresh_market,
     "news": refresh_news,
+    "seekingalpha": refresh_seekingalpha,
     "social": refresh_social,
     "xtwitter": refresh_xtwitter,
     "government": refresh_government,

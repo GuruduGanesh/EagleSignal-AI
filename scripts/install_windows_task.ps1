@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Runner = Join-Path $RepoRoot "scripts\run_research_job.ps1"
-$TaskName = "EagleSignalAI-ResearchCollector"
+$TaskName = "EagleSignalAI-Daily9AM"
 
 if (-not (Test-Path $Runner)) {
     throw "Missing runner script: $Runner"
@@ -13,10 +13,7 @@ $Action = New-ScheduledTaskAction `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$Runner`"" `
     -WorkingDirectory $RepoRoot
 
-$AtLogOn = New-ScheduledTaskTrigger -AtLogOn
-$EveryTwoHours = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(5) `
-    -RepetitionInterval (New-TimeSpan -Hours 2) `
-    -RepetitionDuration (New-TimeSpan -Days 1)
+$Daily = New-ScheduledTaskTrigger -Daily -At 9:00AM
 
 $Settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
@@ -29,9 +26,9 @@ try {
     Register-ScheduledTask `
         -TaskName $TaskName `
         -Action $Action `
-        -Trigger @($AtLogOn, $EveryTwoHours) `
+        -Trigger $Daily `
         -Settings $Settings `
-        -Description "EagleSignal AI focused watchlist research collection every two hours with retry." `
+        -Description "EagleSignal AI daily 09:00 local focused watchlist research collection. Later refreshes are manual from the dashboard Jobs tab." `
         -Force | Out-Null
 
     Write-Host "Installed scheduled task: $TaskName"

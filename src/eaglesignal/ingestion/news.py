@@ -9,6 +9,7 @@ feed so a single outlet can't dominate sentiment:
 * Yahoo Finance RSS    (keyless)        — quote-page headline feed
 * Hacker News RSS      (keyless)        — tech/AI/semis/geopolitical clue stream
 * Seeking Alpha Market News RSS (keyless)— market-wide breaking news
+* Seeking Alpha All Articles RSS (keyless) — latest analysis/editorial stream
 * GDELT DOC 2.0        (keyless)        — broad global news/event coverage
 * yfinance headlines   (keyless)        — quote-page company headlines
 * StockTwits stream    (keyless)        — exchange-tagged retail news/links
@@ -174,6 +175,19 @@ def _last_n_days(items: list[NewsItem], days: int = 2) -> list[NewsItem]:
     ]
 
 
+def _last_n_hours(items: list[NewsItem], hours: int = 24, *, require_timestamp: bool = True) -> list[NewsItem]:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    out: list[NewsItem] = []
+    for item in items:
+        if item.published_at is None:
+            if not require_timestamp:
+                out.append(item)
+            continue
+        if item.published_at >= cutoff:
+            out.append(item)
+    return out
+
+
 _MARKET_CLUE_TERMS = (
     "stock", "market", "nasdaq", "s&p", "dow", "fed", "rates", "jobs", "inflation",
     "tariff", "sanction", "oil", "war", "israel", "iran", "russia", "ukraine",
@@ -187,6 +201,38 @@ def _market_relevant(items: list[NewsItem]) -> list[NewsItem]:
     for item in items:
         title = item.title.lower()
         if any(term in title for term in _MARKET_CLUE_TERMS):
+            out.append(item)
+    return out
+
+
+_COMPANY_STOPWORDS = {
+    "inc", "inc.", "corp", "corp.", "corporation", "company", "co", "co.",
+    "holdings", "holding", "group", "class", "plc", "limited", "ltd", "technology",
+    "technologies", "common", "stock", "shares", "systems",
+}
+
+
+def _contains_symbol(text: str, symbol: str) -> bool:
+    if not text or not symbol:
+        return False
+    return re.search(rf"(?<![A-Z0-9]){re.escape(symbol.upper())}(?![A-Z0-9])", text.upper()) is not None
+
+
+def _entity_relevant(items: list[NewsItem], ticker: str, company_name: str | None = None) -> list[NewsItem]:
+    symbol = (ticker or "").strip().upper()
+    name = (company_name or "").strip().lower()
+    name_tokens = [
+        tok for tok in re.findall(r"[a-z0-9&]+", name)
+        if len(tok) >= 4 and tok not in _COMPANY_STOPWORDS
+    ]
+    out: list[NewsItem] = []
+    for item in items:
+        text = " ".join(x for x in (item.title, item.url) if x)
+        tl = text.lower()
+        if symbol and _contains_symbol(text, symbol):
+            out.append(item)
+            continue
+        if company_name and any(tok in tl for tok in name_tokens):
             out.append(item)
     return out
 
@@ -223,6 +269,25 @@ def _from_seeking_alpha_market_news(days: int = 2) -> list[NewsItem]:
     if resp is None or resp.status_code != 200:
         return []
     return _last_n_days(_parse_rss(resp.text, "Seeking Alpha Market News", "news"), days)[:25]
+
+
+def _from_seeking_alpha_latest_articles(
+    ticker: str,
+    company_name: str | None = None,
+    *,
+    hours: int = 24,
+    market_context: bool = False,
+) -> list[NewsItem]:
+    """Seeking Alpha official latest-articles feed (no HTML scraping)."""
+    from .http_util import throttled_get
+
+    resp = throttled_get("seeking_alpha_articles", "https://seekingalpha.com/feed.xml", min_interval=1.0, timeout=12)
+    if resp is None or resp.status_code != 200:
+        return []
+    items = _last_n_hours(_parse_rss(resp.text, "Seeking Alpha Latest Articles", "analysis"), hours)
+    if market_context:
+        return _market_relevant(items)[:25]
+    return _entity_relevant(items, ticker, company_name)[:15]
 
 
 def _from_finnhub_news(ticker: str, api_key: str) -> list[NewsItem]:
@@ -405,6 +470,8 @@ def fetch_news(ticker: str, company_name: str | None = None) -> NewsResult:
 def _fetch_news_uncached(ticker: str, company_name: str | None = None) -> NewsResult:
     """Merge every available source, newest first, deduped by normalized title."""
     settings = get_settings()
+    max_age_hours = max(1, int(getattr(settings, "news_max_age_hours", 24) or 24))
+    market_context = _is_market_context(ticker, company_name)
     collected: list[tuple[str, list[NewsItem]]] = []
 
     if settings.news_api_key:
@@ -413,7 +480,11 @@ def _fetch_news_uncached(ticker: str, company_name: str | None = None) -> NewsRe
         collected.append(("finnhub", _from_finnhub_news(ticker, settings.finnhub_api_key)))
     collected.append(("google_news", _from_google_news(ticker, company_name)))
     collected.append(("yahoo_rss", _from_yahoo_rss(ticker)))
-    if _is_market_context(ticker, company_name):
+    collected.append((
+        "seeking_alpha_latest_articles_24h",
+        _from_seeking_alpha_latest_articles(ticker, company_name, hours=max_age_hours, market_context=market_context),
+    ))
+    if market_context:
         collected.append(("hacker_news_2d", _from_hacker_news_market(days=2)))
         collected.append(("seeking_alpha_market_2d", _from_seeking_alpha_market_news(days=2)))
     collected.append(("gdelt", _from_gdelt(ticker, company_name)))
@@ -438,5 +509,6 @@ def _fetch_news_uncached(ticker: str, company_name: str | None = None) -> NewsRe
             seen.add(key)
             merged.append(it)
 
+    merged = _last_n_hours(merged, max_age_hours)
     merged.sort(key=lambda i: i.published_at or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     return NewsResult(items=merged, available=bool(merged), providers=providers)

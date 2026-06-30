@@ -1538,14 +1538,11 @@ def render_html(result: RunResult) -> str:
             gc_html = f"<p><b>Global market linkage (60d corr):</b> {gc}</p>"
         nav_html = (
             f"<p style='background:#f0f6ff;padding:6px 8px;border-radius:6px'><b>See this ticker in every tab:</b> "
-            f"<a href='#' data-goto='news' data-ticker='{p.ticker}'>News &amp; Evidence</a> · "
+            f"<a href='#' data-goto='index_strategies' data-ticker='{p.ticker}'>Index Options</a> · "
             f"<a href='#' data-goto='trends' data-ticker='{p.ticker}'>Trends &amp; Impact</a> · "
-            f"<a href='#' data-goto='confidence' data-ticker='{p.ticker}'>Confidence Trace</a> · "
-            f"<a href='#' data-goto='trade_summary' data-ticker='{p.ticker}'>Trade Summary</a> · "
-            f"<a href='#' data-goto='strategy' data-ticker='{p.ticker}'>Trade Strategy</a> · "
-            f"<a href='#' data-goto='options' data-ticker='{p.ticker}'>Options Edge</a> · "
-            f"<a href='#' data-goto='verdicts' data-ticker='{p.ticker}'>Bull/Bear Verdict</a> · "
-            f"<a href='#' data-goto='events' data-ticker='{p.ticker}'>Event Radar</a> · "
+            f"<a href='#' data-goto='news' data-ticker='{p.ticker}'>News &amp; Evidence</a> · "
+            f"<a href='#' data-goto='why' data-ticker='{p.ticker}'>Why Suggested</a> · "
+            f"<a href='#' data-goto='markets' data-ticker='{p.ticker}'>Global Market</a> · "
             f"<a href='/ticker/{p.ticker}' target='_blank'>raw signal JSON</a></p>"
         )
         why_cards += (
@@ -1629,13 +1626,20 @@ def render_html(result: RunResult) -> str:
             "<tr><td colspan='33'>No index-option rows qualified in this scan. "
             "Options Edge only considers SPX, XSP, NDX, XND, RUT, VIX, DJX, and OEX.</td></tr>"
         )
+    options_panel_html = f"""
+<div class="panel"><h3>Detailed Index Options Chain View <span style="font-weight:400;font-size:13px">(same index universe, same research engine)</span></h3>
+<p>Expanded expiry-level detail for the same index-only engine. Data uses the official live/fallback chain already described above, and rows stay filtered to the supported US cash-index options set. Use this table to inspect contract price, DTE, IV, Greeks, flow, liquidity, and the exact reason a setup is tradeable, spread-only, paper-only, or no-trade.</p>
+<table id="optionsTable"><thead><tr><th>Ticker / source</th><th title="Current underlying market price">Underlying current</th><th title="Underlying model target price (forecast-derived)">Target price</th><th title="Target horizon for this row = days to this expiry (the option trade window)">Target days</th><th title="Option expiration date">Expiry</th><th title="Days to expiry">DTE</th><th title="Plain call: buy a call, buy a put, or stay out">Action</th><th title="Expected direction of the underlying">Trend</th><th title="Confidence in this options call (0-100)">Confidence</th><th title="High/medium/low/paper-only based on confidence, liquidity, risk, and spread">Readiness</th><th title="Final execution gate: high / spread only / paper only / no trade">Gate</th><th title="Contract quality from liquidity, DTE, IV, flow, and spread">Opt quality</th><th title="Reference option contract for the action">Contract</th><th title="Latest option premium from the chain">Option price</th><th title="Bid / ask from the chain when available">Bid / Ask</th><th title="Bid/ask width as % of midpoint">Spread %</th><th title="Exact contract volume / exact contract open interest">Exact Vol/OI</th><th title="Black-Scholes approximation: delta, daily theta, vega per 1 IV point">Greeks</th><th title="Price needed at expiration to break even">Breakeven</th><th title="Premium as percent of underlying spot">Premium % spot</th><th title="Implied volatility divided by 20-day realized volatility">IV/RV</th><th title="IV Rank / Percentile from accumulated point-in-time snapshots">IV Rank</th><th title="ATM put-call IV skew / next-expiry term slope, in IV percentage points">Skew/Term</th><th title="Chain-derived unusual activity score / exact-contract OI change since prior stored scan">UOA/OI Δ</th><th title="Option contract multiplier">Lot</th><th title="At-the-money strike">ATM</th><th title="Defined-risk vertical spread (long/short)">Spread</th><th title="Average implied volatility">IV</th><th title="Total option volume for this expiry">Volume</th><th title="Call volume / put volume">C/P Vol</th><th title="Total open interest (liquidity)">OI</th><th title="Put/Call volume ratio">P/C</th><th title="Add this option idea to the Manual Trades tab">Trade</th></tr></thead><tbody>{options_rows}</tbody></table>
+<p class="disc">Only last-24-hour news/evidence is used in the live reasoning flow. Option chain prices themselves are current/delayed market data from the provider chain, not fabricated values.</p></div>
+"""
+    index_options_view = index_strategies_section.replace('class="view"', 'class="view active"', 1).replace("</section>", options_panel_html + "</section>")
     validation_rows = "".join(
         f"<tr><td>{name}</td><td>{status}</td><td>{note}</td></tr>"
         for name, status, note in [
             ("Watchlist-only analysis", "Implemented", "STRICT_WATCHLIST_ONLY defaults to true; ad-hoc tickers are ignored unless disabled."),
             ("Current market price", "Implemented", "Each prediction carries current/previous price, day change, volume, winning provider, retrieved time."),
             ("Parallel refresh + analysis", "Implemented", "Jobs fan source groups out in parallel, /prices/refresh fetches watchlist prices concurrently, and the prediction pipeline analyzes focused tickers with parallel workers."),
-            ("Live price cadence", "Implemented", "Dashboard live prices auto-refresh every 10 minutes while open; Windows refresh/analyze tasks run grouped refresh + analysis every 2 hours."),
+            ("Live refresh cadence", "Implemented", "Automatic source refresh is reduced to one scheduled 9:00 AM America/Chicago run. After that, refreshes are manual from the Jobs tab so you control timing."),
             ("Market-data fallback", "Implemented", "Provider chain is yfinance -> Finnhub -> Tiingo -> Alpha Vantage -> Stooq -> local cache; no synthetic runtime prices are used."),
             ("Trump/admin policy monitoring", "Implemented", "Government connector follows White House/Federal Register/GDELT policy terms including Trump, executive orders, tariffs, export controls, DOJ/FTC/FDA/DoD."),
             ("Why suggested", "Implemented", "Dashboard shows component scores, weights, ensemble forecast, catalysts, risk, invalidation, trend impact, and missing data."),
@@ -1646,12 +1650,12 @@ def render_html(result: RunResult) -> str:
             ("Short-term options edge + algorithm", "Implemented", "Options Edge picks short/medium-dated expiries with a default 5-DTE minimum, shows DTE, ATM strike, defined-risk spread strikes from the 1-sigma move, an algorithmic confluence score (0-5), put/call, IV, OI."),
             ("Trade summary tab", "Implemented", "Best-first compact trade-plan summary shows stock-only plans without option clutter; option-qualified plans include expiry, DTE, contract, strike, entry/stop/exit, liquidity, IV, and Greeks context."),
             ("Trade strategy tab", "Implemented", "Trade Strategy turns the shared prediction/options analysis into a concise research plan: current price, target days, target price, stop loss, option expiry, contract, option stop, and option exit. Live price refresh recalculates target/stop cells in-place."),
-            ("One shared deep analysis", "Implemented", "Every tab (overview, why, news, trends, confidence, options, verdicts, events, themes) is a different view of the same PredictionResult — not a separate analysis."),
+            ("One shared deep analysis", "Implemented", "The reduced dashboard now shows only Index Options, Trends & Impact, News & Evidence, Why Suggested, Global Market, Jobs, and MD Validation — all different views of the same PredictionResult, not separate models."),
             ("Bullish and bearish final verdict", "Implemented", "Bull/Bear Verdicts tab separates long research candidates, short/put research candidates, wait-only names, and risk-blocked setups."),
             ("SNDK-style event detection", "Implemented", "Event Radar tab flags abnormal acceleration, volume expansion, catalyst density, exhaustion risk, and drawdown from recent highs."),
             ("Paper trade clarity", "Implemented", "Paper Trades tab states the actor is EagleSignal simulated paper ledger, not insider/company buying; quantity is fixed-notional fractional shares."),
             ("Manual trade journal", "Implemented", "Manual Trades tab lets you enter, edit, delete, and auto-add rows from Overview/Options Edge using the current displayed entry price."),
-            ("Latest news/evidence", "Implemented", "Multi-source merge (NewsAPI + GDELT + yfinance + StockTwits), deduped, with SEC evidence; X/Twitter remains key-gated."),
+            ("Latest news/evidence", "Implemented", "Multi-source merge is deduped and hard-filtered to the last 24 hours. It now includes official Seeking Alpha Market News RSS plus the official Seeking Alpha latest-articles feed (`feed.xml`); X/Twitter remains key-gated."),
             ("Social sentiment", "Implemented", "StockTwits public bull/bear stream, capped contribution so a viral post cannot dominate."),
             ("Ensemble forecast", "Implemented", "Monte-Carlo bands + trend-agent votes (turtle/MA/momentum) from real history; direction/magnitude/uncertainty separated."),
             ("Dummy live trade", "Implemented", "Paper ledger marks positions against latest fetched price; no broker order is sent."),
@@ -1710,147 +1714,33 @@ def render_html(result: RunResult) -> str:
 <div class="meta">Generated {now} · strategy {result.strategy} · horizon {result.horizon}</div></header>
 {regime_banner}
 <nav>
-<button class="tab active" data-tab="overview">Overview</button>
-<button class="tab" data-tab="index_strategies">⭐ Index Options</button>
-<button class="tab" data-tab="prices">Current Prices</button>
-<button class="tab" data-tab="why">Why Suggested</button>
-<button class="tab" data-tab="news">News & Evidence</button>
+<button class="tab active" data-tab="index_strategies">Index Options</button>
 <button class="tab" data-tab="trends">Trends & Impact</button>
-<button class="tab" data-tab="confidence">Confidence Traces</button>
-<button class="tab" data-tab="trade_summary">Trade Summary</button>
-<button class="tab" data-tab="strategy">Trade Strategy</button>
-<button class="tab" data-tab="options">Options Edge</button>
-<button class="tab" data-tab="verdicts">Bull/Bear Verdicts</button>
-<button class="tab" data-tab="events">Event Radar</button>
-<button class="tab" data-tab="markets">Global Markets</button>
-<button class="tab" data-tab="advisor">AI Advisor</button>
-<button class="tab" data-tab="paper">Paper Trades</button>
-<button class="tab" data-tab="manual">Manual Trades</button>
+<button class="tab" data-tab="news">News & Evidence</button>
+<button class="tab" data-tab="why">Why Suggested</button>
+<button class="tab" data-tab="markets">Global Market</button>
 <button class="tab" data-tab="jobs">Jobs</button>
-<button class="tab" data-tab="themes">Theme Watchlists</button>
 <button class="tab" data-tab="validation">MD Validation</button>
 <span style="flex:1 1 auto"></span>
 <span id="marketClock" title="US equities regular session (NYSE/Nasdaq), times in America/New_York. Excludes 2026 market holidays." style="align-self:center;font-size:12px;font-weight:700;padding:4px 10px;border-radius:6px;background:#374151;color:#e5e7eb">⏳ Market…</span>
 <span id="dataAsOf" class="meta" style="color:#374151;font-size:12px"></span>
 <button class="rbtn" id="reloadKeep" title="Reload this page and stay on the current tab">↻ Reload</button>
-<button class="rbtn" id="refreshPrices" title="Fetch the latest live prices now (no full re-scan)">⟳ Live prices</button>
-<button class="rbtn" id="rescanLive" title="Run a full live re-scan of all data (takes a few minutes)">▶ Re-scan</button>
+<button class="rbtn" id="refreshPrices" title="Fetch the latest live prices now (manual only)">⟳ Live prices</button>
+<button class="rbtn" id="rescanLive" title="Run a full live re-scan of all data manually">▶ Re-scan</button>
 <span id="refreshStatus" style="font-size:12px;color:#374151"></span>
 </nav>
 <main>
-<section id="overview" class="view active">
-<div class="panel" style="background:#f0f6ff">
-<b>How to read this table</b> — research only, not financial advice. <b>Every tab below is one shared deep analysis</b> of the same signal — different views, not separate models.
-<ul style="margin:6px 0 0;font-size:13px">
-<li><b>Direction</b> = what to do: <b>bullish</b> = research a BUY/long · <b>bearish</b> = research a SELL/short or put · <b>neutral</b> = no edge, <i>do not trade</i> · <b>avoid</b> = risk blocked it.</li>
-<li><b>Opportunity (0–100)</b>: how attractive the setup looks. 50 = neutral, higher = more bullish edge, lower = more bearish.</li>
-<li><b>Confidence (0–100)</b>: <b>conviction in the buy/sell call</b> (data quality × how far from neutral). <b>Neutral is capped low on purpose</b> — high confidence is only possible for a clear buy or sell. Not a profit guarantee.</li>
-<li><b>Risk (0–100)</b>: how dangerous — higher is riskier (liquidity, conflicting signals, high IV, stale/synthetic data).</li>
-<li><b>Severity</b>: alert priority — P0 urgent · P1 strong · P2 watch · P3 info only.</li>
-<li><b>Current</b>: latest real market price · <b>Day</b>: % change vs previous close.</li>
-<li><b>Trend &amp; news impact</b>: today's move + news count/tone + social + forecast P(up) + any government / Trump-admin policy links and scheduled economic-event risk to this name.</li>
-<li><b>How to act</b>: trade only names where Direction is bullish/bearish <i>and</i> Confidence clears your threshold and Risk is acceptable. Skip neutral.</li>
-</ul></div>
-<div class="panel"><table><thead><tr>
-<th>#</th><th>Ticker</th><th>Type</th>
-<th title="bullish / neutral / bearish / avoid">Direction</th>
-<th title="How attractive the setup is (0-100, 50=neutral)">Opportunity</th>
-<th title="Conviction in the BUY/SELL call (0-100). Neutral is capped low on purpose. Not a profit probability">Confidence</th>
-<th title="How dangerous the setup is (0-100; higher = riskier)">Risk</th>
-<th title="Alert priority: P0 urgent, P1 strong, P2 watch, P3 info">Severity</th>
-<th title="Latest real market price">Current price</th>
-<th title="Percent change vs previous close">Day %</th>
-<th title="Today's move, news volume/tone, social, forecast tilt, policy links, and scheduled economic-event risk">Trend &amp; news impact</th>
-<th title="Create a Manual Trade row using the current displayed entry price">Manual</th>
-</tr></thead><tbody>{rows}</tbody></table></div></section>
-{index_strategies_section}
-<section id="prices" class="view"><div class="panel"><table><thead><tr><th>Ticker</th><th>Current</th><th>Day change</th><th>Previous close</th><th>Volume</th><th>Source</th><th>Retrieved</th></tr></thead><tbody>{price_rows}</tbody></table></div></section>
-<section id="why" class="view">{why_cards}</section>
-<section id="news" class="view">{news_cards}</section>
+{index_options_view}
 <section id="trends" class="view"><div class="panel"><h3>Trends & News Impact</h3><p><b>Economic events</b> combines scheduled FOMC/jobs/jobless/curated macro releases plus ticker earnings inside the model horizon. High/Extreme means the setup can gap on the release, so options should favor defined-risk structures or wait for confirmation.</p><table><thead><tr><th>Ticker</th><th>Day</th><th>News</th><th>Providers</th><th>Evidence polarity</th><th>Policy links</th><th>Social</th><th>P(up)</th><th>Forecast %</th><th>Economic events</th><th>Summary</th></tr></thead><tbody>{trend_rows}</tbody></table></div></section>
-<section id="confidence" class="view"><div class="panel"><h3>Confidence Traces — why we trust each BUY/SELL call</h3>
-<p><b>Confidence answers: "how convinced are we in the buy or sell?"</b> It is <b>data quality × directional conviction</b>. The <b>Call</b> column says whether the confidence is for a BUY (long), a SELL (short/put), or <b>NO TRADE</b> (neutral — no edge, so confidence is low by design). It is not a profit guarantee. Click a header to sort; use the links to inspect raw signal JSON, source evidence, and jump to the Why/News tabs.</p>
-<table><thead><tr><th>Ticker</th><th title="Is this confidence for a buy, a sell, or no trade?">Call</th><th title="Conviction in the buy/sell call (0-100)">Confidence</th><th title="Raw confidence and historical bucket calibration">Calibration</th><th title="How far the setup is from neutral (0=neutral, 100=clear buy/sell)">Conviction %</th><th title="Data coverage + engine agreement">Data quality %</th><th title="Engine agreement only">Agreement %</th><th title="How many of the 23 MARKET_FACTOR_CHECKLIST groups have real data today, and the honest confidence ceiling that coverage supports. Hover for what to add to raise it.">Factor coverage / ceiling</th><th>Evidence count</th><th>Missing engines</th><th title="Scheduled macro/company events inside the signal horizon and their trade impact">Economic events</th><th>Trace links</th></tr></thead><tbody>{confidence_rows}</tbody></table>
-<p class="disc"><b>Why confidence rarely tops ~70 (and how to raise it honestly):</b> confidence is capped by the <b>factor-coverage ceiling</b> — the system only has live connectors for a subset of the 23 factor groups in <code>MARKET_FACTOR_CHECKLIST.md</code>. The "Factor coverage / ceiling" column shows exactly which groups are missing (e.g. earnings transcripts, analyst revisions, 13F/institutional flows, alternative data). Adding those data feeds raises the ceiling — we never inflate the number.</p></div></section>
-<section id="trade_summary" class="view"><div class="panel"><h3>Trade Summary — best plans first</h3>
-<p><b>Research only, not financial advice.</b> This compact view is sorted with the strongest actionable setups at the top. Ticker rows are grouped: click a ticker's expiry count to expand practical option ideas. Option rows are limited to <b>DTE ≥ {min_option_dte}</b>, <b>premium ≤ ${MAX_STRATEGY_OPTION_PRICE:.0f}</b>, and <b>profit potential ≥ {min_option_profit_pct:.0f}%</b>, sorted best-first, with expiry, DTE, contract, strike, option entry/stop/exit, confidence/readiness/risk/liquidity/IV/Greeks context, and an <b>Add option</b> button. This view is now index-focused first, using the supported US index universe.</p>
-<table id="tradeSummaryTable"><thead><tr>
-<th>Ticker</th><th>Bias</th><th title="Consolidated Bull/Bear research verdict (direction + conviction + confidence)">Bull/Bear</th><th>Instrument</th><th title="Opportunity / Confidence / Risk (0-100 each)">Opp/Conf/Risk</th><th>Current price</th><th>Target price</th><th title="Per-ticker, data-driven: option DTE for option plans, else sessions to reach target at the typical daily move">Target days</th><th>Stop loss</th><th>Exit price</th><th title="Underlying share volume (parent) / exact option contract volume (expiry)">Volume</th><th title="Estimated option premium gain entry→exit. Must be at least {min_option_profit_pct:.0f}% to be promoted; points/$ are shown only as context.">Profit potential</th><th>Option details</th><th>Summary</th><th>Trade</th>
-</tr></thead><tbody>{strategy_summary_rows}</tbody></table>
-<p class="disc">Live-price refresh recalculates current/target/stop/exit in this table and the detailed Trade Strategy table.</p></div></section>
-<section id="strategy" class="view"><div class="panel"><h3>Trade Strategy — target, stop, option expiry, and exit plan</h3>
-<p><b>Research only, not financial advice.</b> This tab converts the same dashboard analysis into a trade-plan view. It uses the latest signal price, 3D forecast when available, minimum {min_option_dte}-DTE options with quoted premium at or below ${MAX_STRATEGY_OPTION_PRICE:.0f} and profit potential at or above {min_option_profit_pct:.0f}%, risk/readiness gates, exact option contract liquidity, IV risk, and confidence trace. Favor <b>defined-risk spreads</b> when IV is elevated or the gate says spread only.</p>
-<table id="strategyTable"><thead><tr>
-<th>Ticker</th><th>Bias</th><th title="Consolidated Bull/Bear research verdict (direction + conviction + confidence)">Bull/Bear</th><th>Strategy action</th><th>Opp/Conf/Risk</th><th>Risk level</th>
-<th title="Current underlying price from the latest report/live refresh">Current</th>
-<th title="Probability of the selected side from the near-term forecast">P(side)</th>
-<th title="Expected return used to compute target">Forecast %</th>
-<th title="Per-ticker, data-driven: option DTE for option plans, else sessions to reach target at the typical daily move">Target days</th>
-<th title="Underlying target price">Target price</th>
-<th title="Underlying invalidation/stop level">Stop loss</th>
-<th title="Underlying exit price for this plan">Exit price</th>
-<th>Expiry</th><th>DTE</th><th>Option contract</th><th>Strike</th>
-<th>Option entry</th><th>Option stop</th><th>Option exit</th>
-<th title="Estimated option premium gain entry→exit. Must be at least {min_option_profit_pct:.0f}% to be promoted; points/$ are shown only as context.">Profit potential</th>
-<th>Opt conf</th><th>Readiness</th><th>Gate</th><th>Spread %</th><th>Vol/OI</th><th>IV Rank</th><th>Delta/Theta</th><th>Why</th><th>Trade</th>
-</tr></thead><tbody>{strategy_rows}</tbody></table>
-<p class="disc">Targets are model-derived research levels, not guarantees. Option exit is estimated from premium plus delta-adjusted underlying move; verify live bid/ask before any real order.</p></div></section>
-<section id="options" class="view"><div class="panel"><h3>Index Options Edge <span style="font-weight:400;font-size:13px">(SPX/XSP/NDX/XND/RUT/VIX/DJX/OEX only, 50+ point expected-move gate, research only)</span></h3>
-<p>For each index we pull <b>live option chains from yfinance with a keyless CBOE delayed-quotes fallback</b> (the <i>source</i> is shown under the ticker), score every short/medium-dated expiration with a <b>default 5-DTE minimum</b>, and surface the <b>3 highest-confidence expirations</b>. The call is stated plainly: <b style="color:#16a34a">BUY CALL</b> = we expect the index to go <b>UP ▲</b>; <b style="color:#dc2626">BUY PUT</b> = we expect it to go <b>DOWN ▼</b>; <b style="color:#f59e0b">NO TRADE</b> = no live trade because the edge is weak or the 50-point gate failed. The <b>Options Risk Gate</b> now deep-scores direction, data quality, algo confluence, exact-contract liquidity, DTE, IV/realized vol, Greeks/theta, flow, premium cost, and bid/ask spread. Click a ticker to expand/collapse its ranked expiries; header sorting keeps each ticker and its expiries grouped together.</p>
-<div class="panel" style="background:#f0f6ff;font-size:13px;line-height:1.6">
-<b>Key metrics, in plain terms:</b><br>
-<b>IV</b> (implied volatility) — the market's expected price swing. <b>High IV = expensive options + IV-crush risk</b> after the event; prefer defined-risk spreads.<br>
-<b>C/P Vol</b> (call volume / put volume) — how many call vs put contracts traded today. <b>More calls = bullish flow, more puts = bearish/hedging flow.</b><br>
-<b>OI</b> (open interest) — total contracts currently outstanding. <b>Higher OI = more liquidity</b> (tighter spreads, easier to exit); very low OI = research/paper only.<br>
-<b>P/C</b> (put/call ratio) — puts ÷ calls by volume. <b>&lt;1 = call-heavy (bullish positioning), &gt;1 = put-heavy (bearish/hedging).</b>
-<br><b>Confidence (0–100)</b> is the <b>single consolidated score</b> — it already blends direction, data quality, algo confluence, exact-contract liquidity, DTE, IV vs realized vol, Greeks/theta, options flow, bid/ask spread, IV-Rank, and event/earnings risk. You do not need to read every column; Confidence + the Verdict below summarise them.
-<br><b>Readiness / Gate</b> — tradeability filters. <b>Spread %</b> is bid/ask width; wide spreads can erase option gains. <b>Greeks</b>: Δ delta, Θ daily theta, V vega per 1 IV point.
-<br><b>Skew/Term</b> = ATM put IV minus call IV, then next-expiry IV minus current-expiry IV. <b>UOA/OI Δ</b> = chain-derived unusual activity score and exact-contract OI change vs the prior stored scan; it is not a paid unusual-flow feed.
-<br><b>Each entry is now TWO lines:</b> line 1 = the numbers + the <b>Add trade</b> button (it drops the idea into the <b>Manual Trades</b> tab); line 2 = the plain <b>Verdict</b>, the recommended <b>structure</b>, and the full <b>Why (evidence)</b>.
-<br><b>What the Verdict means:</b>
- <b style="color:#16a34a">✅ TRADEABLE</b> = clears the gate, the listed option is fine to trade ·
- <b style="color:#b45309">⚠️ TRADE AS A SPREAD</b> = <b>do NOT buy the naked option</b> (rich IV / earnings / wide spread would bleed it) — use the defined-risk <i>spread</i> shown on line 2 instead ·
- <b style="color:#dc2626">📝 PAPER ONLY</b> = track it, don't risk real money (thin liquidity / very short DTE / high IV-crush) ·
- <b style="color:#6b7280">🚫 NO TRADE</b> = no live trade right now; either the directional edge is weak or the setup failed the index/options gate.
-</div>
-<table id="optionsTable"><thead><tr><th>Ticker / source</th><th title="Current underlying market price">Underlying current</th><th title="Underlying model target price (forecast-derived)">Target price</th><th title="Target horizon for this row = days to this expiry (the option trade window)">Target days</th><th title="Option expiration date">Expiry</th><th title="Days to expiry">DTE</th><th title="Plain call: buy a call, buy a put, or stay out">Action</th><th title="Expected direction of the underlying">Trend</th><th title="Confidence in this options call (0-100)">Confidence</th><th title="High/medium/low/paper-only based on confidence, liquidity, risk, and spread">Readiness</th><th title="Final execution gate: high / spread only / paper only / no trade">Gate</th><th title="Contract quality from liquidity, DTE, IV, flow, and spread">Opt quality</th><th title="Reference option contract for the action">Contract</th><th title="Latest option premium from the chain">Option price</th><th title="Bid / ask from the chain when available">Bid / Ask</th><th title="Bid/ask width as % of midpoint">Spread %</th><th title="Exact contract volume / exact contract open interest">Exact Vol/OI</th><th title="Black-Scholes approximation: delta, daily theta, vega per 1 IV point">Greeks</th><th title="Price needed at expiration to break even">Breakeven</th><th title="Premium as percent of underlying spot">Premium % spot</th><th title="Implied volatility divided by 20-day realized volatility">IV/RV</th><th title="IV Rank / Percentile from accumulated point-in-time snapshots">IV Rank</th><th title="ATM put-call IV skew / next-expiry term slope, in IV percentage points">Skew/Term</th><th title="Chain-derived unusual activity score / exact-contract OI change since prior stored scan">UOA/OI Δ</th><th title="Option contract multiplier">Lot</th><th title="At-the-money strike">ATM</th><th title="Defined-risk vertical spread (long/short)">Spread</th><th title="Average implied volatility">IV</th><th title="Total option volume for this expiry">Volume</th><th title="Call volume / put volume">C/P Vol</th><th title="Total open interest (liquidity)">OI</th><th title="Put/Call volume ratio">P/C</th><th title="Add this option idea to the Manual Trades tab">Trade</th></tr></thead><tbody>{options_rows}</tbody></table>
-<p class="disc">Live/delayed data only — no fabricated option prices. Add option records use premium × contracts × lot size (usually 100). Always verify bid/ask, spread width, Greeks, IV rank, and earnings date before any real trade.</p></div></section>
-<section id="verdicts" class="view"><div class="panel"><h3>Bullish and Bearish Research Verdicts <span style="font-weight:400;font-size:13px">(strict expected-move / reward-risk gate)</span></h3>
-<p><b>Research only.</b> A ticker is only a <b>VALID research candidate</b> when its honest, analysis-derived move clears <b>all</b> of: expected points ≥ <code>max(price×5%, 5 if price&lt;100 else 10)</code>, expected % ≥ 5%, and reward/risk ≥ 2:1 — plus conviction thresholds. Weak setups are <b>rejected or watch-listed, never inflated</b>. Quality over quantity.</p>
-<table><thead><tr><th>Ticker</th><th title="Consolidated Bull/Bear research verdict from the strict gate">Bull/Bear</th><th title="VALID_RESEARCH_CANDIDATE / WATCHLIST / REJECTED / NO_TRADE">Validation status</th><th title="Latest underlying price">Current price</th><th title="Analysis-derived underlying target (never inflated)">Target price</th><th title="Target − Current (side-aligned)">Expected pts</th><th title="Expected move %; must be ≥ 5%">Expected %</th><th title="max(price×5%, 5 if price<100 else 10)">Final req pts</th><th title="Reward/Risk; must be ≥ 2:1">R/R</th><th title="Per-ticker sessions to target">Target days</th><th title="Conviction 0-100">Confidence</th><th title="Opportunity 0-100">Opp</th><th title="Risk 0-100 (lower better)">Risk</th><th title="Why this was rejected/watch-listed, if applicable">Rejected reason</th><th>Why</th></tr></thead><tbody>{verdict_rows}</tbody></table></div></section>
-<section id="events" class="view"><div class="panel"><h3>Event Radar — Breakout and Exhaustion Watch</h3><p>Designed to catch SNDK-style event moves early and to flag when a crowded winner may be turning bearish.</p><table><thead><tr><th>Ticker</th><th>Radar verdict</th><th>Breakout</th><th>Exhaustion</th><th>20D %</th><th>60D %</th><th>252D %</th><th>Volume x20D</th><th>Bullish clues</th><th>Bearish clues</th></tr></thead><tbody>{event_rows}</tbody></table></div></section>
+<section id="news" class="view">{news_cards}</section>
+<section id="why" class="view">{why_cards}</section>
 <section id="markets" class="view"><div class="panel"><h3>Global Markets — US · Europe · Asia</h3>
 <p>{global_regime}</p>
 <table><thead><tr><th>Region</th><th>Index</th><th>Symbol</th><th>Last</th><th>Day change</th></tr></thead><tbody>{global_rows}</tbody></table>
 <p class="disc">Index levels via the real-data provider chain. Per-ticker rolling correlations to these indexes appear under "Why Suggested".</p></div></section>
-<section id="advisor" class="view"><div class="panel"><h3>AI Investment Advisor <span style="font-weight:400;font-size:13px">(research only — not financial advice)</span></h3>
-<p>Ask about the latest signals, or paste holdings to review (e.g. <code>AAPL:10, MSFT:5</code>).</p>
-<div><textarea id="advisorMsg" rows="2" style="width:100%" placeholder="What should I buy? Why is NVDA neutral? Review my portfolio."></textarea></div>
-<div style="margin:6px 0"><input id="advisorPortfolio" style="width:60%" placeholder="Optional holdings: AAPL:10, MSFT:5">
-<button id="advisorSend" class="tab">Ask Advisor</button><span id="advisorStatus"></span></div>
-<pre id="advisorAnswer" style="white-space:pre-wrap;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:12px;min-height:60px"></pre></div></section>
-<section id="paper" class="view"><div class="panel"><h3>System Paper Trades — EagleSignal grading its OWN calls</h3>
-<div class="panel" style="background:#f0f6ff;font-size:13px">
-<b>What is this?</b> When the model issues a bullish or bearish call, it opens a <b>hypothetical (paper) position against itself</b> so you can see whether its research actually makes money over time. <b>This is the system testing itself.</b><br>
-It is <b>NOT</b>: a company buying its own stock · <b>NOT</b> insider buying · <b>NOT</b> another investor's trade · <b>NOT</b> a real broker order.<br>
-<b>Simulated action</b>: <span style="color:#16a34a;font-weight:700">SIMULATED BUY</span> = the model went long to test a bullish call · <span style="color:#dc2626;font-weight:700">SIMULATED SELL/SHORT</span> = the model shorted to test a bearish call.<br>
-<b>Qty is fractional</b> because the ledger always risks a fixed <b>$1,000 test notional</b> ÷ entry price (hover the Qty cell for the exact math). It is not "1 share" — it is whatever $1,000 buys.
-</div>
-<table><thead><tr><th>Ticker</th><th title="Did the system simulate a buy or a sell to test its call?">Simulated action</th><th>Entry</th><th>Current</th><th title="Fractional: $1,000 test notional / entry price">Qty</th><th>Notional</th><th>P/L %</th><th>P/L $</th><th>Opened</th><th>By</th></tr></thead><tbody>{paper_rows}</tbody></table></div><p class="disc">Simulated self-test trades only. No broker order is ever created.</p></section>
-<section id="manual" class="view"><div class="panel"><h3>Manual Trade Journal</h3><form id="manualTradeForm">
-<input type="hidden" name="edit_id" id="manualEditId" value="">
-<label>Ticker <input name="ticker" required placeholder="NVDA"></label>
-<label>Side <select name="side"><option value="long">long</option><option value="short">short</option></select></label>
-<label>Entry price <input name="entry_price" type="number" step="0.0001" min="0.0001" required></label>
-<label>Quantity <input name="quantity" type="number" step="0.000001" min="0.000001" required></label>
-<label>Note <input name="note" placeholder="Why I entered"></label>
-<button type="submit" class="tab" id="manualSubmitBtn">Add Trade</button>
-<button type="button" class="tab" id="manualCancelBtn" style="display:none">Cancel edit</button>
-<span id="manualTradeStatus"></span></form>
-<table><thead><tr><th>Ticker / Contract</th><th>Instrument</th><th>Underlying</th><th>Expiry</th><th>Option</th><th>Side</th><th>Entry</th><th>Current</th><th>Qty</th><th>Lot</th><th>Notional</th><th>P/L %</th><th>P/L $</th><th>Note</th><th>Opened</th><th>Actions</th></tr></thead><tbody id="manualTradeRows">{manual_rows}</tbody></table></div><p class="disc">Add, <b>edit</b>, or <b>delete</b> trades here — for tracking your own analysis only. Option rows track the exact contract/expiry premium; notional and P/L use premium × contracts × lot size. Edit updates the entry/quantity and re-marks live P/L; delete removes the row. No broker order is ever sent.</p></section>
 <section id="jobs" class="view">
 <div class="panel"><h3>Parallel Live-Data Refresh Jobs</h3>
-<p>Each source group is its own <b>fast, independent job</b>. Click <b>Generate from newest data</b> to fan every group out <b>in parallel threads</b>, then re-run the full prediction pipeline and write a fresh dashboard. Use <b>Refresh ALL</b> when you only want to update the source cache/status table. Manual/reference, paid, and API-gated sources are still listed so the trace shows what was considered, skipped, or needs keys.</p>
+<p>Each source group is its own <b>fast, independent job</b>. The only automatic run is the daily <b>9:00 AM America/Chicago</b> refresh/analysis. After that, use <b>Generate from newest data</b> or a single-category button whenever you want a manual update. Manual/reference, paid, and API-gated sources are still listed so the trace shows what was considered, skipped, or needs keys.</p>
 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
 <button id="generateFreshDashboard" class="rbtn" style="font-size:14px;padding:10px 16px">▶ Generate from newest data</button>
 <button id="refreshAllJobs" class="tab" style="font-size:14px;padding:10px 16px">⟳ Refresh ALL source cache</button>
@@ -1861,6 +1751,7 @@ It is <b>NOT</b>: a company buying its own stock · <b>NOT</b> insider buying ·
 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
 <button class="tab catbtn" data-cat="market">Market data</button>
 <button class="tab catbtn" data-cat="news">News</button>
+<button class="tab catbtn" data-cat="seekingalpha">Seeking Alpha</button>
 <button class="tab catbtn" data-cat="social">Sentiment</button>
 <button class="tab catbtn" data-cat="xtwitter">X / Twitter</button>
 <button class="tab catbtn" data-cat="government">Government</button>
@@ -1878,7 +1769,7 @@ It is <b>NOT</b>: a company buying its own stock · <b>NOT</b> insider buying ·
 </div>
 <table><thead><tr><th>Source / job</th><th>Status</th><th>Last refresh</th><th>Elapsed</th><th>Summary</th><th>Run</th></tr></thead>
 <tbody id="refreshTableBody"><tr><td colspan="6">Click <b>Refresh status table</b> or run a refresh to populate.</td></tr></tbody></table>
-<p class="disc">Jobs run read-only and concurrently. Browser automation refreshes live prices every 10 minutes. The Windows scheduled task refreshes all source groups, re-analyzes, and writes fresh reports every 2 hours when the laptop is on. "+ analyze" then re-runs the full prediction pipeline and writes fresh reports.</p>
+<p class="disc">Jobs run read-only and concurrently. There is no recurring intraday auto-refresh anymore: the daily 9:00 AM America/Chicago task does the automatic run, and all later refreshes are manual from this tab. "+ analyze" re-runs the full prediction pipeline and writes fresh reports.</p>
 </div>
 <div class="panel"><h3>Full Collection Job (single end-to-end scan)</h3>
 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -1892,9 +1783,8 @@ It is <b>NOT</b>: a company buying its own stock · <b>NOT</b> insider buying ·
 <button id="labelsRefresh" class="tab">Feature Labels</button>
 <span id="jobRunStatus"></span></div>
 <pre id="jobStatus" style="white-space:pre-wrap;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:12px;min-height:80px"></pre>
-<p class="disc">Install the Windows scheduled tasks with <code>scripts/install_windows_tasks_split.ps1</code> (run once from PowerShell). It registers small independent jobs: an 08:35 full morning scan, a 20:35 full evening scan, a grouped parallel refresh + analysis every 2 hours, and a weekly ADR-002 retune. A single-task installer (<code>scripts/install_windows_task.ps1</code>) is also available.</p>
+<p class="disc">Install the Windows scheduled task with <code>scripts/install_windows_tasks_split.ps1</code> (or the simpler <code>scripts/install_windows_task.ps1</code>) to register the single daily 9:00 AM America/Chicago automated scan. All other refreshes are manual from this dashboard.</p>
 </div></section>
-<section id="themes" class="view">{_theme_tables(result)}</section>
 <section id="validation" class="view"><div class="panel"><table><thead><tr><th>MD requirement</th><th>Status</th><th>Notes</th></tr></thead><tbody>{validation_rows}</tbody></table></div></section>
 <div class="disc">{__disclaimer__}</div>
 </main>
@@ -1914,7 +1804,7 @@ function activateTab(name) {{
 document.querySelectorAll('button.tab').forEach(btn =>
   btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
 // Restore the last tab on load (URL hash wins, then localStorage) so a refresh
-// keeps you exactly where you were instead of snapping back to Overview.
+// keeps you exactly where you were instead of snapping back to Index Options.
 (function restoreTab() {{
   let want = (location.hash || '').replace('#', '');
   if (!want) {{ try {{ want = localStorage.getItem('eagleTab') || ''; }} catch (e) {{}} }}
@@ -2110,13 +2000,15 @@ async function refreshManualTrades() {{
     if (!resp.ok) return;
     const data = await resp.json();
     window.__manualTrades = data.open || [];
+    const body = document.getElementById('manualTradeRows');
+    if (!body) return;
     const rows = window.__manualTrades.map(t => {{
       const cls = valueClass(t.unrealized_pnl_dollars);
       const sideCls = t.side === 'long' ? 'bull' : 'bear';
       const inst = t.instrument_type || 'equity';
       return `<tr><td><b>${{t.ticker}}</b></td><td>${{inst}}</td><td>${{t.underlying || t.ticker}}</td><td>${{t.option_expiration || '—'}}</td><td>${{t.option_type || '—'}}</td><td class="${{sideCls}}">${{t.side}}</td><td>${{t.entry_price}}</td><td>${{t.current_price ?? 'n/a'}}</td><td>${{t.quantity}}</td><td>${{t.contract_multiplier || 1}}</td><td>${{t.notional}}</td><td class="${{cls}}">${{fmtPct(t.unrealized_pnl_pct)}}</td><td class="${{cls}}">${{fmtMoney(t.unrealized_pnl_dollars)}}</td><td>${{t.note || ''}}</td><td>${{t.opened_at}}</td><td><button class="tab mt-edit" data-id="${{t.id}}">edit</button> <button class="tab mt-del" data-id="${{t.id}}" style="border-color:#dc2626;color:#dc2626">delete</button></td></tr>`;
     }}).join('');
-    document.getElementById('manualTradeRows').innerHTML = rows || '<tr><td colspan="16">No manual trades yet. Add one above.</td></tr>';
+    body.innerHTML = rows || '<tr><td colspan="16">No manual trades yet. Add one above.</td></tr>';
     bindManualRowButtons();
   }} catch (err) {{}}
 }}
@@ -2183,7 +2075,6 @@ function bindSignalTradeButtons() {{
     const resp = await fetch('/manual-trades', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify(payload)}});
     if (resp.ok) {{
       if (status) status.textContent = ticker + ' added to Manual Trades at ' + price + '.';
-      activateTab('manual');
       await refreshManualTrades();
     }} else if (status) {{
       status.textContent = ' failed to add ' + ticker + '.';
@@ -2192,10 +2083,14 @@ function bindSignalTradeButtons() {{
 }}
 function manualResetForm() {{
   const form = document.getElementById('manualTradeForm');
+  if (!form) return;
   form.reset();
-  document.getElementById('manualEditId').value = '';
-  document.getElementById('manualSubmitBtn').textContent = 'Add Trade';
-  document.getElementById('manualCancelBtn').style.display = 'none';
+  const edit = document.getElementById('manualEditId');
+  const submit = document.getElementById('manualSubmitBtn');
+  const cancel = document.getElementById('manualCancelBtn');
+  if (edit) edit.value = '';
+  if (submit) submit.textContent = 'Add Trade';
+  if (cancel) cancel.style.display = 'none';
 }}
 function bindManualRowButtons() {{
   document.querySelectorAll('.mt-edit').forEach(b => b.onclick = () => {{
@@ -2323,8 +2218,8 @@ document.getElementById('labelsRefresh')?.addEventListener('click', async () => 
 }});
 refreshJobStatus();
 // --- Parallel category refresh jobs (Jobs tab) ------------------------------
-const REFRESH_CATS = ['market','news','social','xtwitter','government','trump','political','macro','global','official_economic','company_events','options_volatility','reference_dashboards','automation_apis','paid_platforms','source_registry'];
-const CAT_LABEL = {{market:'Market data',news:'News',social:'Sentiment',xtwitter:'X / Twitter',government:'Government',trump:'Trump / Admin',political:'Political / Geopolitical',macro:'Macro',global:'Global markets',official_economic:'Official economic',company_events:'Company events',options_volatility:'Options / Volatility',reference_dashboards:'Dashboards / News refs',automation_apis:'Automation APIs',paid_platforms:'Paid platforms',source_registry:'Source registry'}};
+const REFRESH_CATS = ['market','news','seekingalpha','social','xtwitter','government','trump','political','macro','global','official_economic','company_events','options_volatility','reference_dashboards','automation_apis','paid_platforms','source_registry'];
+const CAT_LABEL = {{market:'Market data',news:'News',seekingalpha:'Seeking Alpha',social:'Sentiment',xtwitter:'X / Twitter',government:'Government',trump:'Trump / Admin',political:'Political / Geopolitical',macro:'Macro',global:'Global markets',official_economic:'Official economic',company_events:'Company events',options_volatility:'Options / Volatility',reference_dashboards:'Dashboards / News refs',automation_apis:'Automation APIs',paid_platforms:'Paid platforms',source_registry:'Source registry'}};
 function renderRefreshTable(cats) {{
   const body = document.getElementById('refreshTableBody');
   if (!body) return;
@@ -2407,24 +2302,6 @@ document.getElementById('refreshAllJobs')?.addEventListener('click', async () =>
   await queueRefreshAll(!!analyze, analyze ? 'refresh + analyze' : 'refresh');
 }});
 loadRefreshStatus();
-let sourceAutoRefreshRunning = false;
-async function refreshAllSourcesAuto() {{
-  if (sourceAutoRefreshRunning) return;
-  sourceAutoRefreshRunning = true;
-  const status = document.getElementById('refreshAllStatus');
-  if (status) status.textContent = ' auto-refreshing source groups in parallel...';
-  try {{
-    const resp = await fetch('/jobs/refresh-all', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{analyze:true}})}});
-    const data = await resp.json();
-    if (data.results) renderRefreshTable({{categories: data.results}});
-    if (status) status.textContent = data.status === 'queued' ? ' auto refresh + analyze queued.' : ' auto source refresh done in ' + (data.elapsed_sec ?? '?') + 's.';
-  }} catch (e) {{
-    if (status) status.textContent = ' auto source refresh unavailable.';
-  }} finally {{
-    sourceAutoRefreshRunning = false;
-  }}
-}}
-setInterval(refreshAllSourcesAuto, 2 * 60 * 60 * 1000);
 // --- Global refresh controls (present on every tab via the sticky nav) ------
 // Reload keeps the current tab because activateTab persists it to the URL hash
 // + localStorage, and restoreTab() re-applies it on load.
@@ -2470,7 +2347,6 @@ async function refreshLivePrices(auto=false) {{
   finally {{ livePriceRefreshRunning = false; }}
 }}
 document.getElementById('refreshPrices')?.addEventListener('click', () => refreshLivePrices(false));
-setInterval(() => refreshLivePrices(true), 10 * 60 * 1000);
 
 // Re-scan: kick off a full live re-scan in the background, then auto-reload
 // (staying on the current tab) once it finishes.

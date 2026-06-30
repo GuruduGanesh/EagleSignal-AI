@@ -4,7 +4,7 @@
 > meaningful change so a restarted terminal, rate-limit recovery, or new Codex
 > turn can resume quickly without losing context.
 
-Last updated: 2026-06-09  America/Chicago
+Last updated: 2026-06-30  America/Chicago
 
 ## Backup
 
@@ -22,6 +22,41 @@ Last updated: 2026-06-09  America/Chicago
 Implement index-options-only Options Edge plus a broader stock-market prediction
 engine while preserving all existing dashboard, equity research, manual-trade,
 jobs, and watchlist behavior.
+
+## Completed (2026-06-30 Seeking Alpha + reduced-dashboard + 9AM schedule batch)
+
+User asks: use Seeking Alpha official URLs aggressively but legally for latest
+live research, keep only the requested dashboard tabs, and collapse automatic
+refreshing to one 9:00 AM America/Chicago run with manual refresh afterward.
+
+- Added a hard `NEWS_MAX_AGE_HOURS` setting (default `24`) and applied it to the
+  merged news/evidence feed so stale/untimestamped items do not survive in live
+  scoring.
+- Added official Seeking Alpha latest-articles ingestion via
+  `https://seekingalpha.com/feed.xml` alongside the existing official
+  `https://seekingalpha.com/market-news.xml` feed.
+- Seeking Alpha latest-articles items are filtered to the relevant ticker/company
+  or to broad market/index clues for index-context names; no HTML scraping or
+  paywall/login bypass was added.
+- Reduced dashboard tabs to the requested set:
+  - `Index Options`
+  - `Trends & Impact`
+  - `News & Evidence`
+  - `Why Suggested`
+  - `Global Market`
+  - `Jobs`
+  - `MD Validation`
+- Folded the detailed expiry-level `Options Edge` table into the `Index Options`
+  tab so options detail is preserved even though the extra tab is removed.
+- Removed recurring browser auto-refresh intervals for source jobs and live price
+  polling; refreshes are now manual from the toolbar/Jobs tab unless the daily
+  scheduled run is used.
+- Updated Windows task installers so the automatic schedule is only one local
+  daily run at `09:00` (`EagleSignalAI-Daily9AM`). Older morning/evening/2h/weekly
+  auto tasks are retired by the split installer.
+- Updated README, DATA_SOURCES, and WORKFLOW docs plus dashboard MD-validation
+  notes to reflect the official Seeking Alpha feeds, 24-hour freshness rule, the
+  reduced tab set, and the 9:00 AM America/Chicago schedule.
 
 ## Completed (2026-06-09 index-options-only market engine batch)
 
@@ -482,16 +517,11 @@ data-lead-time (IV-Rank/scorecards need weeks of snapshots) or blocked on you
 - Completed (2026-06-03 schedule update):
   - Updated `scripts/install_windows_tasks_split.ps1` and applied it to Windows
     Task Scheduler.
-  - Retired `EagleSignalAI-Every2Hours` so full scans are not running outside
-    the requested daily morning/evening windows.
-  - `EagleSignalAI-MorningBrief`: full prediction scan daily at **08:35 local**.
-    Verified next run: 2026-06-04 08:35.
-  - `EagleSignalAI-EveningBrief`: full prediction scan daily at **20:35 local**.
-    Verified next run: 2026-06-03 20:35.
-  - Superseded 2026-06-04: the prior `EagleSignalAI-Intraday30m` 5-minute
-    cadence was retired and replaced by `EagleSignalAI-RefreshAnalyze2h`.
-  - `EagleSignalAI-WeeklyRetune`: installed/verified weekly Saturday 20:00.
-  - Updated README, WORKFLOW, and dashboard text to match the new cadence.
+  - Historical note only: this batch originally introduced separate morning /
+    evening / intraday scheduled tasks.
+  - Superseded by 2026-06-30: the active automatic schedule is now only
+    `EagleSignalAI-Daily9AM` at **09:00 America/Chicago**, with later refreshes
+    handled manually from the dashboard Jobs tab.
 - Completed (2026-06-03 GPU + options expiry tightening):
   - Re-read current project state after outside changes before editing.
   - GPU Monte-Carlo is now wired from `Settings` into the prediction engine:

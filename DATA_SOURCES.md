@@ -118,7 +118,8 @@ Implemented multi-source merge (deduped by normalized title, newest first):
 - Google News RSS (keyless) — top-source aggregator, originating publisher attributed
 - Yahoo Finance RSS (keyless) — per-symbol headline feed
 - Hacker News RSS (keyless) — market-relevant tech/AI/chips/geopolitical clues from the last two days, used for market/index context
-- Seeking Alpha Market News RSS (keyless public feed) — market-wide headlines from the last two days, used for market/index context
+- Seeking Alpha Market News RSS (keyless public feed) — market-wide headlines
+- Seeking Alpha All Articles RSS (`https://seekingalpha.com/feed.xml`) — latest analysis/editorial stream
 - GDELT DOC 2.0 (keyless, throttled to one request / 5s) — broad global news/events
 - Direct White House presidential-actions RSS feed, Federal Register presidential documents, and GDELT policy/admin queries for Trump administration, White House, executive orders, tariffs, export controls, DOJ/FTC/FDA/DoD, AI/data-center policy
 - Event Radar uses only real historical bars from the market-data provider chain. It does not fabricate SNDK-style moves; it detects acceleration, volume expansion, catalyst density, drawdown, and exhaustion from downloaded data.
@@ -133,6 +134,12 @@ Reuters, Bloomberg, CNBC, MarketWatch, WSJ/Barron's, The Fly, Benzinga Pro,
 Briefing.com, and Seeking Alpha article pages are valuable news-flow/reference
 sources, but paid/paywalled sources must only be used through licensed access.
 Rumors and opinion sources are context-only until confirmed.
+
+Freshness rule:
+
+- Live analysis only keeps headlines with a published timestamp inside the last
+  **24 hours**. Anything older or untimestamped is dropped from the merged
+  news/evidence feed so stale stories do not linger in the score.
 
 Rules:
 

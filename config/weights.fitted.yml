@@ -1,73 +1,45 @@
 _generated_by: eaglesignal tune (ADR-002, walk-forward, no lookahead)
-_universe_size: 38
-_horizon_days: 5
-_note: Only price-derived engines are tuned (no lookahead); fundamentals/options/macro/sentiment
-  keep their hand-set prior.
+_universe_size: 25
+_horizon_days: null
+_note: "Multi-horizon walk-forward (\xA72.3): intraday=1D, swing-family=5D, long_term/index=20D.\
+  \ Only price-derived engines are tuned (no lookahead); fundamentals/options/macro/sentiment\
+  \ keep their hand-set prior."
 default: {}
 profiles:
+  intraday:
+    technical_structure: 9.2
+    price_volume_momentum: 10.8
+    fundamentals: 2.0
+    options_intelligence: 16.0
+    macro_regime: 5.0
+    news_events: 9.0
+    sentiment: 5.0
+    cross_market_correlation: 33.096
+    ensemble_forecast: 7.904
+    risk_penalty_adjustment: 2.0
   swing:
-    technical_structure: 12.647
-    price_volume_momentum: 14.15
+    technical_structure: 13.665
+    price_volume_momentum: 11.025
     fundamentals: 13.0
     options_intelligence: 13.0
     macro_regime: 10.0
     news_events: 9.0
     sentiment: 6.0
-    cross_market_correlation: 8.684
-    ensemble_forecast: 9.52
-    risk_penalty_adjustment: 4.0
-  earnings:
-    technical_structure: 6.868
-    price_volume_momentum: 8.25
-    fundamentals: 21.0
-    options_intelligence: 23.0
-    macro_regime: 6.0
-    news_events: 13.0
-    sentiment: 6.0
-    cross_market_correlation: 5.85
-    ensemble_forecast: 6.032
-    risk_penalty_adjustment: 4.0
-  long_term:
-    technical_structure: 5.705
-    price_volume_momentum: 6.533
-    fundamentals: 36.0
-    options_intelligence: 5.0
-    macro_regime: 17.0
-    news_events: 10.0
-    sentiment: 4.0
-    cross_market_correlation: 6.178
-    ensemble_forecast: 5.584
+    cross_market_correlation: 9.908
+    ensemble_forecast: 10.402
     risk_penalty_adjustment: 4.0
   options_buying:
-    technical_structure: 11.484
-    price_volume_momentum: 13.633
+    technical_structure: 12.434
+    price_volume_momentum: 10.716
     fundamentals: 6.0
     options_intelligence: 28.0
     macro_regime: 6.0
     news_events: 9.0
     sentiment: 6.0
-    cross_market_correlation: 7.811
-    ensemble_forecast: 9.072
+    cross_market_correlation: 8.954
+    ensemble_forecast: 9.895
     risk_penalty_adjustment: 3.0
-  options_selling:
-    technical_structure: 7.789
-    price_volume_momentum: 8.422
-    fundamentals: 10.0
-    options_intelligence: 32.0
-    macro_regime: 8.0
-    news_events: 8.0
-    sentiment: 4.0
-    cross_market_correlation: 6.008
-    ensemble_forecast: 5.781
-    risk_penalty_adjustment: 10.0
-  index_trend:
-    technical_structure: 14.415
-    price_volume_momentum: 16.327
-    fundamentals: 4.0
-    options_intelligence: 9.0
-    macro_regime: 20.0
-    news_events: 8.0
-    sentiment: 4.0
-    cross_market_correlation: 11.543
-    ensemble_forecast: 10.715
-    risk_penalty_adjustment: 2.0
+_horizons:
+  intraday: 1
+  swing: 5
+  options_buying: 5

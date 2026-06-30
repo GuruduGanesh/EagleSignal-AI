@@ -64,10 +64,16 @@ def throttled_get(host_key: str, url: str, *, params=None, headers=None,
             resp = requests.get(url, params=params, headers=hdrs, timeout=timeout,
                                  proxies=_proxies())
         except Exception as exc:
-            log.warning("GET %s failed: %s", host_key, exc)
+            # Retry transient network errors (timeout / connection reset) with
+            # backoff — important under scan concurrency where flaky endpoints
+            # (e.g. CBOE delayed quotes) intermittently time out.
+            if attempt < retries:
+                time.sleep(min(2.0 * (attempt + 1), 6.0))
+                continue
+            log.warning("GET %s failed after %d attempts: %s", host_key, attempt + 1, exc)
             return None
-        if resp.status_code == 429 and attempt < retries:
-            time.sleep(max(min_interval, 5.0))
+        if resp.status_code in (429, 500, 502, 503, 504) and attempt < retries:
+            time.sleep(max(min_interval, 3.0 * (attempt + 1)))
             continue
         return resp
     return None

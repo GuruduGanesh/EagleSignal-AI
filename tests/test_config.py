@@ -34,6 +34,10 @@ def test_options_minimum_expiry_defaults_to_five_days():
     assert Settings().min_option_days_to_expiry == 5
 
 
+def test_news_max_age_defaults_to_24_hours():
+    assert Settings().news_max_age_hours == 24
+
+
 def test_default_watchlist_is_focused_on_requested_niche_names():
     assets, _ = load_watchlist()
     tickers = {a.ticker for a in assets}

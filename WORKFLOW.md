@@ -17,9 +17,8 @@ This workflow defines how EagleSignal AI should run throughout the market day.
 | After-Market Scan | 4:30-7:00 PM ET | Earnings, SEC filings, guidance, after-hours moves | After-market report |
 | Weekend Deep Scan | Saturday/Sunday | Fundamental, macro, backtest, sector rotation | Weekly report |
 | Event Trigger | Any time | Breaking news, filing, Fed/CPI/jobs/FDA/DOD event | Urgent alert |
-| Local Scheduled Collection | Every 2 hours while laptop is on | Refresh focused watchlist, news, events, prices, reports | Dashboard/report update |
-| Intraday Parallel Refresh | Every 5 minutes during market hours | Refresh grouped source jobs and re-analyze the focused watchlist | Updated signals/dashboard |
-| Browser Price Refresh | Every 10 minutes while dashboard is open | Patch current market prices and manual trade P/L without a full scan | Updated visible price/P&L cells |
+| Local Scheduled Collection | 9:00 AM America/Chicago daily | Run the single automatic refresh, analysis, and report write | Dashboard/report update |
+| Browser Price Refresh | Manual | Patch current market prices without a full scan | Updated visible price cells |
 | Browser Manual Collection | On demand from Dashboard -> Jobs | Run the same grouped refresh and analysis job immediately | Queued job + status |
 
 ## 2. End-to-End Pipeline
@@ -82,7 +81,7 @@ Scheduler
    - Prefer official/company/exchange/licensed sources over dashboards and opinion sources.
    - Mark delayed/manual/paywalled/context-only sources in the confidence trace.
    - Treat social, Substack, X accounts, Seeking Alpha opinions, and rumor desks as context until confirmed.
-11. Refresh grouped source jobs in parallel when run manually or by schedule:
+11. Refresh grouped source jobs in parallel when run manually or by the 9:00 AM schedule:
    - Market, news, sentiment, X/Twitter, government, Trump/admin, political/geopolitical, macro, global.
    - Official economic, company events, options/volatility, reference dashboards, automation APIs, paid platforms, source registry.
 12. Analyze focused tickers in parallel after shared macro/government/global context is collected.

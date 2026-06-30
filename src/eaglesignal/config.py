@@ -96,6 +96,8 @@ class Settings:
     # Minimum worthwhile option profit potential as a percent of option premium.
     # Trades below this are flagged "low potential" and should not be promoted.
     min_option_profit_pct: float = 10.0
+    # Hard freshness gate for news/evidence headlines used by the live engine.
+    news_max_age_hours: int = 24
     confidence_threshold: int = 65
     pipeline_max_workers: int = 16
     per_ticker_retries: int = 1
@@ -181,6 +183,7 @@ class Settings:
             min_option_days_to_expiry=as_int("MIN_OPTION_DAYS_TO_EXPIRY", 5),
             min_index_option_move_points=as_float("MIN_INDEX_OPTION_MOVE_POINTS", 50.0),
             min_option_profit_pct=as_float("MIN_OPTION_PROFIT_PCT", 10.0),
+            news_max_age_hours=as_int("NEWS_MAX_AGE_HOURS", 24),
             confidence_threshold=as_int("DEFAULT_CONFIDENCE_THRESHOLD", 65),
             pipeline_max_workers=as_int("PIPELINE_MAX_WORKERS", 16),
             per_ticker_retries=as_int("PER_TICKER_RETRIES", 1),

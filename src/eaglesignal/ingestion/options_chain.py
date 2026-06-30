@@ -129,7 +129,7 @@ def _fetch_cboe(ticker: str, spot: Optional[float], max_expiries: int, min_days:
         f"https://cdn.cboe.com/api/global/delayed_quotes/options/_{sym}.json",  # index symbols
     ):
         try:
-            resp = throttled_get("cboe", url, min_interval=1.0, timeout=15, retries=1)
+            resp = throttled_get("cboe", url, min_interval=1.2, timeout=20, retries=3)
             if resp is None or resp.status_code != 200:
                 continue
             payload = resp.json().get("data", {})
